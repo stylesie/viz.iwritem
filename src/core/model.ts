@@ -1,5 +1,7 @@
 export type ShapeType = 'circle' | 'oval' | 'square' | 'rectangle' | 'diamond' | 'triangle'
 
+export type IconAlign = 'left' | 'center' | 'right'
+
 export interface Shape {
   id: string
   type: ShapeType
@@ -16,6 +18,9 @@ export interface Shape {
   headerIcon: string
   bodyIcon: string
   footerIcon: string
+  headerIconAlign: IconAlign
+  bodyIconAlign: IconAlign
+  footerIconAlign: IconAlign
   selected: boolean
 }
 
@@ -60,6 +65,9 @@ export function createShape(type: ShapeType, x: number, y: number): Shape {
     headerIcon: '',
     bodyIcon: '',
     footerIcon: '',
+    headerIconAlign: 'left',
+    bodyIconAlign: 'left',
+    footerIconAlign: 'left',
     selected: false,
   }
 }

@@ -1,4 +1,4 @@
-import type { Shape, ShapeType } from './model'
+import type { Shape, ShapeType, IconAlign } from './model'
 import { MIN_SHAPE_SIZE, DEFAULT_SHAPE_SIZE } from './model'
 
 const PADDING_X = 24
@@ -14,6 +14,7 @@ export const ICON_GAP = 4
 export interface TextZoneLayout {
   text: string
   icon: string
+  iconAlign: IconAlign
   font: string
   lines: string[]
   lineHeight: number
@@ -109,9 +110,14 @@ export function computeTextLayout(shape: Shape, maxWrapWidth = 200): ShapeTextLa
   const bodyHasIcon = !!shape.bodyIcon
   const footerHasIcon = !!shape.footerIcon
 
-  const headerWrapW = headerHasIcon ? maxWrapWidth - iconExtra : maxWrapWidth
-  const bodyWrapW = bodyHasIcon ? maxWrapWidth - iconExtra : maxWrapWidth
-  const footerWrapW = footerHasIcon ? maxWrapWidth - iconExtra : maxWrapWidth
+  const headerAlign = shape.headerIconAlign || 'left'
+  const bodyAlign = shape.bodyIconAlign || 'left'
+  const footerAlign = shape.footerIconAlign || 'left'
+
+  // Only reduce wrap width for left/right (side-by-side); center stacks vertically
+  const headerWrapW = (headerHasIcon && headerAlign !== 'center') ? maxWrapWidth - iconExtra : maxWrapWidth
+  const bodyWrapW = (bodyHasIcon && bodyAlign !== 'center') ? maxWrapWidth - iconExtra : maxWrapWidth
+  const footerWrapW = (footerHasIcon && footerAlign !== 'center') ? maxWrapWidth - iconExtra : maxWrapWidth
 
   const headerMeasure = measureZone(shape.header, HEADER_FONT, 18, headerWrapW)
   const bodyMeasure = measureZone(shape.body, BODY_FONT, 17, bodyWrapW)
@@ -134,14 +140,29 @@ export function computeTextLayout(shape: Shape, maxWrapWidth = 200): ShapeTextLa
     footerMeasure.width = 0
   }
 
+  // For center alignment, add icon height above text
+  if (headerHasIcon && headerAlign === 'center') {
+    headerMeasure.height += ICON_SIZE + ICON_GAP
+  }
+  if (bodyHasIcon && bodyAlign === 'center') {
+    bodyMeasure.height += ICON_SIZE + ICON_GAP
+  }
+  if (footerHasIcon && footerAlign === 'center') {
+    footerMeasure.height += ICON_SIZE + ICON_GAP
+  }
+
   const allMeasures = [
-    { m: headerMeasure, hasIcon: headerHasIcon },
-    { m: bodyMeasure, hasIcon: bodyHasIcon },
-    { m: footerMeasure, hasIcon: footerHasIcon },
+    { m: headerMeasure, hasIcon: headerHasIcon, align: headerAlign },
+    { m: bodyMeasure, hasIcon: bodyHasIcon, align: bodyAlign },
+    { m: footerMeasure, hasIcon: footerHasIcon, align: footerAlign },
   ].filter(z => z.m.lines.length > 0)
 
   const contentWidth = Math.max(
-    ...allMeasures.map(z => z.m.width + (z.hasIcon ? iconExtra : 0)),
+    ...allMeasures.map(z => {
+      // For center alignment, icon doesn't add to width (it stacks above)
+      if (z.align === 'center') return Math.max(z.m.width, z.hasIcon ? ICON_SIZE : 0)
+      return z.m.width + (z.hasIcon ? iconExtra : 0)
+    }),
     0,
   )
   const gapTotal = allMeasures.length > 1 ? (allMeasures.length - 1) * ZONE_GAP : 0
@@ -151,6 +172,7 @@ export function computeTextLayout(shape: Shape, maxWrapWidth = 200): ShapeTextLa
   const makeZoneLayout = (
     text: string,
     icon: string,
+    iconAlign: IconAlign,
     font: string,
     m: { lines: string[]; width: number; height: number },
     lineHeight: number,
@@ -159,6 +181,7 @@ export function computeTextLayout(shape: Shape, maxWrapWidth = 200): ShapeTextLa
     const layout: TextZoneLayout = {
       text,
       icon,
+      iconAlign,
       font,
       lines: m.lines,
       lineHeight,
@@ -169,9 +192,9 @@ export function computeTextLayout(shape: Shape, maxWrapWidth = 200): ShapeTextLa
     return layout
   }
 
-  const header = makeZoneLayout(shape.header, shape.headerIcon, HEADER_FONT, headerMeasure, 18)
-  const body = makeZoneLayout(shape.body, shape.bodyIcon, BODY_FONT, bodyMeasure, 17)
-  const footer = makeZoneLayout(shape.footer, shape.footerIcon, FOOTER_FONT, footerMeasure, 15)
+  const header = makeZoneLayout(shape.header, shape.headerIcon, headerAlign, HEADER_FONT, headerMeasure, 18)
+  const body = makeZoneLayout(shape.body, shape.bodyIcon, bodyAlign, BODY_FONT, bodyMeasure, 17)
+  const footer = makeZoneLayout(shape.footer, shape.footerIcon, footerAlign, FOOTER_FONT, footerMeasure, 15)
 
   return { header, body, footer, contentWidth, contentHeight }
 }

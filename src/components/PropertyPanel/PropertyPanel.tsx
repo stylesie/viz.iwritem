@@ -1,5 +1,5 @@
 import { useDiagramStore } from '../../store/diagramStore'
-import type { TextZone } from '../../store/diagramStore'
+import type { TextZone, IconAlign } from '../../store/diagramStore'
 import './PropertyPanel.css'
 
 const PALETTE = [
@@ -10,43 +10,67 @@ const PALETTE = [
   '#55efc4', '#81ecec', '#74b9ff', '#a3d8f4', '#fd79a8',
 ]
 
-const ICONS: { icon: string; label: string }[] = [
-  { icon: '', label: 'None' },
-  { icon: '\u2605', label: 'Star' },           // ★
-  { icon: '\u2714', label: 'Check' },           // ✔
-  { icon: '\u2718', label: 'Cross' },           // ✘
-  { icon: '\u26A0', label: 'Warning' },         // ⚠
-  { icon: '\u2139', label: 'Info' },            // ℹ
-  { icon: '\u2764', label: 'Heart' },           // ❤
-  { icon: '\u26A1', label: 'Lightning' },       // ⚡
-  { icon: '\u2699', label: 'Gear' },            // ⚙
-  { icon: '\u270E', label: 'Pencil' },          // ✎
-  { icon: '\u2709', label: 'Envelope' },        // ✉
-  { icon: '\u260E', label: 'Phone' },           // ☎
-  { icon: '\u2615', label: 'Cup' },             // ☕
-  { icon: '\u2601', label: 'Cloud' },           // ☁
-  { icon: '\u263A', label: 'Smile' },           // ☺
-  { icon: '\u2602', label: 'Umbrella' },        // ☂
-  { icon: '\u266B', label: 'Music' },           // ♫
-  { icon: '\u2691', label: 'Flag' },            // ⚑
-  { icon: '\u25B6', label: 'Play' },            // ▶
-  { icon: '\u25A0', label: 'Stop' },            // ■
-  { icon: '\u27A4', label: 'Arrow' },           // ➤
-  { icon: '\u2B50', label: 'Gold Star' },       // ⭐
-  { icon: '\u2753', label: 'Question' },        // ❓
-  { icon: '\u2757', label: 'Exclamation' },     // ❗
-  { icon: '\u{1F512}', label: 'Lock' },         // 🔒
-  { icon: '\u{1F513}', label: 'Unlock' },       // 🔓
-  { icon: '\u{1F4C1}', label: 'Folder' },       // 📁
-  { icon: '\u{1F4C4}', label: 'Document' },     // 📄
-  { icon: '\u{1F464}', label: 'Person' },       // 👤
-  { icon: '\u{1F465}', label: 'People' },       // 👥
-  { icon: '\u{1F4E6}', label: 'Package' },      // 📦
-  { icon: '\u{1F527}', label: 'Wrench' },       // 🔧
-  { icon: '\u{1F4BB}', label: 'Computer' },     // 💻
-  { icon: '\u{1F4F1}', label: 'Mobile' },       // 📱
-  { icon: '\u{1F310}', label: 'Globe' },        // 🌐
-  { icon: '\u{1F6E1}', label: 'Shield' },       // 🛡
+interface IconEntry { icon: string; label: string }
+interface IconPalette { id: string; name: string; icons: IconEntry[] }
+
+const NETWORKING_PALETTE: IconPalette = {
+  id: 'networking',
+  name: 'Networking & Computers',
+  icons: [
+    { icon: '', label: 'None' },
+    // Devices
+    { icon: '\u{1F5A5}', label: 'Desktop' },        // 🖥
+    { icon: '\u{1F4BB}', label: 'Laptop' },          // 💻
+    { icon: '\u{1F4F1}', label: 'Mobile' },          // 📱
+    { icon: '\u{1F5A8}', label: 'Printer' },         // 🖨
+    // Infrastructure
+    { icon: '\u{1F5B3}', label: 'Server' },          // 🖳 (old PC)
+    { icon: '\u{1F4BE}', label: 'Storage' },         // 💾
+    { icon: '\u{1F4BF}', label: 'Disk' },            // 💿
+    // Networking
+    { icon: '\u{1F310}', label: 'Globe' },           // 🌐
+    { icon: '\u{1F4E1}', label: 'Antenna' },         // 📡
+    { icon: '\u{1F4F6}', label: 'Signal' },          // 📶
+    { icon: '\u{1F50C}', label: 'Plug' },            // 🔌
+    { icon: '\u26A1', label: 'Lightning' },          // ⚡
+    // Security
+    { icon: '\u{1F512}', label: 'Lock' },            // 🔒
+    { icon: '\u{1F513}', label: 'Unlock' },          // 🔓
+    { icon: '\u{1F6E1}', label: 'Shield' },          // 🛡
+    { icon: '\u{1F511}', label: 'Key' },             // 🔑
+    // Cloud & services
+    { icon: '\u2601', label: 'Cloud' },              // ☁
+    { icon: '\u{1F4E6}', label: 'Package' },         // 📦
+    { icon: '\u{1F4C1}', label: 'Folder' },          // 📁
+    { icon: '\u{1F4C4}', label: 'Document' },        // 📄
+    { icon: '\u{1F4CB}', label: 'Clipboard' },       // 📋
+    // Status
+    { icon: '\u2714', label: 'Check' },              // ✔
+    { icon: '\u2718', label: 'Error' },              // ✘
+    { icon: '\u26A0', label: 'Warning' },            // ⚠
+    { icon: '\u2139', label: 'Info' },               // ℹ
+    { icon: '\u2699', label: 'Gear' },               // ⚙
+    { icon: '\u{1F527}', label: 'Wrench' },          // 🔧
+    // People
+    { icon: '\u{1F464}', label: 'User' },            // 👤
+    { icon: '\u{1F465}', label: 'Group' },           // 👥
+    { icon: '\u{1F4BC}', label: 'Briefcase' },       // 💼
+    // Communication
+    { icon: '\u260E', label: 'Phone' },              // ☎
+    { icon: '\u2709', label: 'Email' },              // ✉
+    { icon: '\u{1F4AC}', label: 'Message' },         // 💬
+    // Misc networking
+    { icon: '\u{1F517}', label: 'Link' },            // 🔗
+    { icon: '\u{1F504}', label: 'Sync' },            // 🔄
+  ],
+}
+
+const ICONS = NETWORKING_PALETTE.icons
+
+const ALIGN_OPTIONS: { value: IconAlign; label: string; symbol: string }[] = [
+  { value: 'left', label: 'Left', symbol: '\u25C0' },    // ◀
+  { value: 'center', label: 'Center', symbol: '\u25CF' }, // ●
+  { value: 'right', label: 'Right', symbol: '\u25B6' },   // ▶
 ]
 
 const ICON_ZONES: { zone: TextZone; label: string }[] = [
@@ -75,6 +99,7 @@ function ShapeProperties() {
   const shapes = useDiagramStore(s => s.shapes)
   const updateShapeColors = useDiagramStore(s => s.updateShapeColors)
   const updateShapeIcon = useDiagramStore(s => s.updateShapeIcon)
+  const updateShapeIconAlign = useDiagramStore(s => s.updateShapeIconAlign)
 
   if (!selection || selection.type !== 'shape') return null
   const shape = shapes.find(s => s.id === selection.id)
@@ -105,7 +130,7 @@ function ShapeProperties() {
       <div className="prop-section">
         <div className="prop-label">Border</div>
         <div className="color-grid">
-          {PALETTE.slice(0, 10).map(c => (
+          {PALETTE.map(c => (
             <ColorSwatch
               key={`stroke-${c}`}
               color={c}
@@ -125,7 +150,7 @@ function ShapeProperties() {
       <div className="prop-section">
         <div className="prop-label">Text</div>
         <div className="color-grid">
-          {PALETTE.slice(0, 10).map(c => (
+          {PALETTE.map(c => (
             <ColorSwatch
               key={`text-${c}`}
               color={c}
@@ -146,10 +171,28 @@ function ShapeProperties() {
         <div className="prop-label">Icons</div>
         {ICON_ZONES.map(({ zone, label }) => {
           const iconKey = `${zone}Icon` as keyof typeof shape
+          const alignKey = `${zone}IconAlign` as keyof typeof shape
           const currentIcon = shape[iconKey] as string
+          const currentAlign = (shape[alignKey] as IconAlign) || 'left'
           return (
             <div key={zone} className="icon-zone-row">
-              <span className="icon-zone-label">{label}</span>
+              <div className="icon-zone-header">
+                <span className="icon-zone-label">{label}</span>
+                {currentIcon && (
+                  <div className="icon-align-row">
+                    {ALIGN_OPTIONS.map(({ value, label: alignLabel, symbol }) => (
+                      <button
+                        key={`${zone}-align-${value}`}
+                        className={`icon-align-btn ${currentAlign === value ? 'selected' : ''}`}
+                        onClick={() => updateShapeIconAlign(shape.id, zone, value)}
+                        title={alignLabel}
+                      >
+                        {symbol}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="icon-grid">
                 {ICONS.map(({ icon, label: iconLabel }) => (
                   <button

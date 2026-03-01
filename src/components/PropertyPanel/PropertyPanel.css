@@ -74,11 +74,48 @@
   margin-bottom: 6px;
 }
 
+.icon-zone-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
 .icon-zone-label {
   font-size: 10px;
   color: var(--text-muted);
-  display: block;
-  margin-bottom: 2px;
+}
+
+.icon-align-row {
+  display: flex;
+  gap: 2px;
+}
+
+.icon-align-btn {
+  width: 20px;
+  height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+  font-size: 9px;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.icon-align-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-muted);
+}
+
+.icon-align-btn.selected {
+  background: var(--bg-active);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .icon-grid {

@@ -4,7 +4,7 @@ import rough from 'roughjs'
 import { useDiagramStore } from '../../store/diagramStore'
 import type { Theme } from '../../store/diagramStore'
 import { hitTestShape, getShapeCenter, getShapeEdgePoint, pointToSegmentDist } from '../../utils/geometry'
-import { computeTextLayout, PADDING_Y, ICON_SIZE, ICON_GAP } from '../../core/autoResize'
+import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../../core/autoResize'
 import type { Shape, Line } from '../../core/model'
 import type { TextZoneLayout } from '../../core/autoResize'
 
@@ -110,32 +110,82 @@ function drawTextZones(ctx: CanvasRenderingContext2D, shape: Shape) {
   const drawZone = (zone: TextZoneLayout | null) => {
     if (!zone) return
     const hasIcon = !!zone.icon
-    const iconOffset = hasIcon ? (ICON_SIZE + ICON_GAP) / 2 : 0
-    const textCenterX = x + w / 2 + iconOffset
+    const align = zone.iconAlign
 
-    // Draw icon
-    if (hasIcon) {
+    if (hasIcon && align === 'center') {
+      // Center: icon centered above text
+      const iconX = x + w / 2
+      const iconY = contentTop + zone.y
       ctx.font = `${ICON_SIZE}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
-      const iconX = textCenterX - iconOffset - ICON_SIZE / 2
-      ctx.fillText(zone.icon, iconX, contentTop + zone.y + (zone.lineHeight - ICON_SIZE) / 2)
-    }
+      ctx.fillText(zone.icon, iconX, iconY)
 
-    // Draw text lines
-    ctx.font = zone.font
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'top'
-    const maxTextW = w - PADDING_Y * 2 - (hasIcon ? ICON_SIZE + ICON_GAP : 0)
-    for (let i = 0; i < zone.lines.length; i++) {
-      const lineText = zone.lines[i].trim()
-      if (lineText) {
-        ctx.fillText(
-          lineText,
-          textCenterX,
-          contentTop + zone.y + i * zone.lineHeight,
-          maxTextW,
-        )
+      // Text centered below icon
+      ctx.font = zone.font
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+      const textStartY = iconY + ICON_SIZE + ICON_GAP
+      const maxTextW = w - PADDING_X * 2
+      for (let i = 0; i < zone.lines.length; i++) {
+        const lineText = zone.lines[i].trim()
+        if (lineText) {
+          ctx.fillText(lineText, x + w / 2, textStartY + i * zone.lineHeight, maxTextW)
+        }
+      }
+    } else if (hasIcon && align === 'right') {
+      // Right: icon at right edge, text right-aligned before icon
+      const iconX = x + w - PADDING_X
+      const iconY = contentTop + zone.y + (zone.lineHeight - ICON_SIZE) / 2
+      ctx.font = `${ICON_SIZE}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+      ctx.fillText(zone.icon, iconX, iconY)
+
+      // Text right-aligned, ending before icon
+      ctx.font = zone.font
+      ctx.textAlign = 'right'
+      ctx.textBaseline = 'top'
+      const textRightEdge = iconX - ICON_SIZE / 2 - ICON_GAP
+      const maxTextW = w - PADDING_X * 2 - ICON_SIZE - ICON_GAP
+      for (let i = 0; i < zone.lines.length; i++) {
+        const lineText = zone.lines[i].trim()
+        if (lineText) {
+          ctx.fillText(lineText, textRightEdge, contentTop + zone.y + i * zone.lineHeight, maxTextW)
+        }
+      }
+    } else if (hasIcon) {
+      // Left (default): icon at left edge, text left-aligned after icon
+      const iconX = x + PADDING_X
+      const iconY = contentTop + zone.y + (zone.lineHeight - ICON_SIZE) / 2
+      ctx.font = `${ICON_SIZE}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+      ctx.fillText(zone.icon, iconX, iconY)
+
+      // Text left-aligned, starting after icon
+      ctx.font = zone.font
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      const textLeftEdge = iconX + ICON_SIZE / 2 + ICON_GAP
+      const maxTextW = w - PADDING_X * 2 - ICON_SIZE - ICON_GAP
+      for (let i = 0; i < zone.lines.length; i++) {
+        const lineText = zone.lines[i].trim()
+        if (lineText) {
+          ctx.fillText(lineText, textLeftEdge, contentTop + zone.y + i * zone.lineHeight, maxTextW)
+        }
+      }
+    } else {
+      // No icon: text center-aligned as before
+      ctx.font = zone.font
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+      const maxTextW = w - PADDING_X * 2
+      for (let i = 0; i < zone.lines.length; i++) {
+        const lineText = zone.lines[i].trim()
+        if (lineText) {
+          ctx.fillText(lineText, x + w / 2, contentTop + zone.y + i * zone.lineHeight, maxTextW)
+        }
       }
     }
   }

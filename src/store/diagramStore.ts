@@ -1,8 +1,10 @@
 import { create } from 'zustand'
-import type { Shape, ShapeType, Line } from '../core/model'
+import type { Shape, ShapeType, Line, IconAlign } from '../core/model'
 import { createShape, generateId } from '../core/model'
 import { autoResizeShape } from '../core/autoResize'
 import { runLayout } from '../core/layout'
+
+export type { IconAlign }
 
 export type Tool = 'select' | 'connect' | ShapeType
 
@@ -73,6 +75,7 @@ interface DiagramState {
   // Colour / icon actions
   updateShapeColors: (id: string, colors: { fillColor?: string; strokeColor?: string; textColor?: string }) => void
   updateShapeIcon: (id: string, zone: TextZone, icon: string) => void
+  updateShapeIconAlign: (id: string, zone: TextZone, align: IconAlign) => void
   updateLineColor: (id: string, color: string) => void
 
   // Line actions
@@ -328,6 +331,21 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       const newShapes = state.shapes.map(s =>
         s.id === id ? { ...s, [iconKey]: icon } : s
       )
+      debouncedAutoSave(newShapes, state.lines)
+      return { shapes: newShapes }
+    })
+  },
+
+  updateShapeIconAlign: (id, zone, align) => {
+    pushHistory(get, set)
+    const alignKey = `${zone}IconAlign` as const
+    set((state) => {
+      const newShapes = state.shapes.map(s => {
+        if (s.id !== id) return s
+        const updated = { ...s, [alignKey]: align }
+        const resized = autoResizeShape(updated)
+        return { ...updated, ...resized }
+      })
       debouncedAutoSave(newShapes, state.lines)
       return { shapes: newShapes }
     })
