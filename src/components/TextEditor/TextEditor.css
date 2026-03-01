@@ -1,0 +1,81 @@
+.text-editor-panel {
+  position: absolute;
+  z-index: 100;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-panel);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: 0 4px 16px var(--shadow);
+  min-width: 200px;
+  max-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.text-editor-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.text-editor-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.text-editor-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.text-editor-input {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+  resize: vertical;
+  min-height: 28px;
+  outline: none;
+  transition: border-color 0.15s;
+  font-family: Inter, system-ui, sans-serif;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+}
+
+.text-editor-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.15);
+}
+
+[data-theme="dark"] .text-editor-input:focus {
+  box-shadow: 0 0 0 2px rgba(168, 165, 255, 0.15);
+}
+
+.text-editor-input::placeholder {
+  color: var(--text-muted);
+}
+
+.text-editor-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* On small screens, position the panel at the bottom */
+@media (max-width: 600px) {
+  .text-editor-panel {
+    position: fixed !important;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: 8px !important;
+    top: auto !important;
+    max-width: none;
+    border-radius: 12px;
+    box-shadow: 0 -4px 24px var(--shadow);
+  }
+}

@@ -1,0 +1,57 @@
+/* ── Theme variables ─────────────────────────────────────── */
+:root {
+  --bg-canvas: #fafafa;
+  --bg-panel: #ffffff;
+  --bg-toolbar: #ffffff;
+  --bg-hover: #f0f0f0;
+  --bg-active: #e3f2fd;
+  --border: #e0e0e0;
+  --border-panel: #d0d0d0;
+  --text-primary: #333;
+  --text-secondary: #555;
+  --text-muted: #888;
+  --accent: #2196f3;
+  --accent-dark: #1565c0;
+  --grid: #e0e0e0;
+  --shadow: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="dark"] {
+  --bg-canvas: #121212;
+  --bg-panel: #232329;
+  --bg-toolbar: #232329;
+  --bg-hover: #363636;
+  --bg-active: #403e6a;
+  --border: #46464f;
+  --border-panel: #46464f;
+  --text-primary: #e3e3e8;
+  --text-secondary: #b0b0b8;
+  --text-muted: #8e8d9c;
+  --accent: #a8a5ff;
+  --accent-dark: #beb9ff;
+  --grid: #2e2d39;
+  --shadow: rgba(0, 0, 0, 0.3);
+}
+
+/* ── Reset ───────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--bg-canvas);
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--text-primary);
+}

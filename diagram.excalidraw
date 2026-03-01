@@ -1,0 +1,138 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "https://idrawm.app",
+  "elements": [
+    {
+      "angle": 0,
+      "strokeColor": "#2d3436",
+      "backgroundColor": "#e8f4f8",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a00001",
+      "roundness": {
+        "type": 3
+      },
+      "seed": 1,
+      "version": 1,
+      "versionNonce": 2,
+      "isDeleted": false,
+      "boundElements": [
+        {
+          "id": "rxld5gjtxe",
+          "type": "arrow"
+        }
+      ],
+      "updated": 1772338974775,
+      "link": null,
+      "locked": false,
+      "id": "4b0cg1l6rx",
+      "type": "rectangle",
+      "x": 207.5,
+      "y": 51.5,
+      "width": 100,
+      "height": 100
+    },
+    {
+      "angle": 0,
+      "strokeColor": "#2d3436",
+      "backgroundColor": "#e8f4f8",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a00003",
+      "roundness": {
+        "type": 3
+      },
+      "seed": 3,
+      "version": 1,
+      "versionNonce": 4,
+      "isDeleted": false,
+      "boundElements": [
+        {
+          "id": "rxld5gjtxe",
+          "type": "arrow"
+        }
+      ],
+      "updated": 1772338974775,
+      "link": null,
+      "locked": false,
+      "id": "vk7kp9hsz0",
+      "type": "diamond",
+      "x": 207.5,
+      "y": 211.5,
+      "width": 100,
+      "height": 100
+    },
+    {
+      "angle": 0,
+      "strokeColor": "#2d3436",
+      "backgroundColor": "transparent",
+      "fillStyle": "solid",
+      "strokeWidth": 2,
+      "strokeStyle": "solid",
+      "roughness": 1,
+      "opacity": 100,
+      "groupIds": [],
+      "frameId": null,
+      "index": "a00005",
+      "roundness": null,
+      "seed": 5,
+      "version": 1,
+      "versionNonce": 6,
+      "isDeleted": false,
+      "boundElements": null,
+      "updated": 1772338974775,
+      "link": null,
+      "locked": false,
+      "id": "rxld5gjtxe",
+      "type": "arrow",
+      "x": 257.5,
+      "y": 151.5,
+      "width": 0,
+      "height": 60,
+      "points": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          60
+        ]
+      ],
+      "lastCommittedPoint": null,
+      "startBinding": {
+        "elementId": "4b0cg1l6rx",
+        "focus": 0,
+        "gap": 4,
+        "fixedPoint": null
+      },
+      "endBinding": {
+        "elementId": "vk7kp9hsz0",
+        "focus": 0,
+        "gap": 4,
+        "fixedPoint": null
+      },
+      "startArrowhead": null,
+      "endArrowhead": "arrow",
+      "elbowed": false
+    }
+  ],
+  "appState": {
+    "gridSize": 20,
+    "gridStep": 5,
+    "gridModeEnabled": false,
+    "viewBackgroundColor": "#ffffff"
+  },
+  "files": {}
+}

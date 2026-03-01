@@ -1,0 +1,9 @@
+.app {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+}
