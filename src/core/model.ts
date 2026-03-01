@@ -47,7 +47,7 @@ export function generateId(): string {
 export const DEFAULT_SHAPE_SIZE = 100
 export const MIN_SHAPE_SIZE = 40
 
-export function createShape(type: ShapeType, x: number, y: number): Shape {
+export function createShape(type: ShapeType, x: number, y: number, colors?: { fillColor?: string; strokeColor?: string; textColor?: string }): Shape {
   const size = DEFAULT_SHAPE_SIZE
   return {
     id: generateId(),
@@ -56,9 +56,9 @@ export function createShape(type: ShapeType, x: number, y: number): Shape {
     y: y - size / 2,
     width: size,
     height: size,
-    fillColor: '#e8f4f8',
-    strokeColor: '#2d3436',
-    textColor: '#2d3436',
+    fillColor: colors?.fillColor ?? '#e8f4f8',
+    strokeColor: colors?.strokeColor ?? '#2d3436',
+    textColor: colors?.textColor ?? '#2d3436',
     header: '',
     body: '',
     footer: '',

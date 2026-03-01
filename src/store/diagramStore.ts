@@ -6,6 +6,31 @@ import { runLayout } from '../core/layout'
 
 export type { IconAlign }
 
+export interface ShapeColorDefaults {
+  fillColor: string
+  strokeColor: string
+  textColor: string
+}
+
+export interface DefaultPalette {
+  shapes: Partial<Record<ShapeType, ShapeColorDefaults>>
+  line: { color: string }
+}
+
+const DEFAULTS_KEY = 'idrawm-defaults'
+
+function loadDefaultPalette(): DefaultPalette {
+  try {
+    const raw = localStorage.getItem(DEFAULTS_KEY)
+    if (raw) return JSON.parse(raw) as DefaultPalette
+  } catch { /* ignore */ }
+  return { shapes: {}, line: { color: '#2d3436' } }
+}
+
+function saveDefaultPalette(palette: DefaultPalette) {
+  localStorage.setItem(DEFAULTS_KEY, JSON.stringify(palette))
+}
+
 export type Tool = 'select' | 'connect' | ShapeType
 
 export type TextZone = 'header' | 'body' | 'footer'
@@ -52,6 +77,8 @@ interface DiagramState {
   zoom: number
   // Theme
   theme: Theme
+  // Default palette
+  defaultPalette: DefaultPalette
   // History
   history: HistoryEntry[]
   historyIndex: number
@@ -59,6 +86,8 @@ interface DiagramState {
   // Actions
   setTool: (tool: Tool) => void
   toggleTheme: () => void
+  setShapeDefault: (type: ShapeType, colors: Partial<ShapeColorDefaults>) => void
+  setLineDefault: (colors: { color: string }) => void
   addShape: (type: ShapeType, canvasX: number, canvasY: number) => void
   selectShape: (id: string | null) => void
   selectLine: (id: string | null) => void
@@ -188,6 +217,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   panY: 0,
   zoom: 1,
   theme: (localStorage.getItem('idrawm-theme') as Theme) || 'light',
+  defaultPalette: loadDefaultPalette(),
   history: [{ shapes: [], lines: [] }],
   historyIndex: 0,
 
@@ -201,9 +231,30 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     })
   },
 
+  setShapeDefault: (type, colors) => {
+    set((state) => {
+      const prev = state.defaultPalette.shapes[type] ?? { fillColor: '#e8f4f8', strokeColor: '#2d3436', textColor: '#2d3436' }
+      const updated: DefaultPalette = {
+        ...state.defaultPalette,
+        shapes: { ...state.defaultPalette.shapes, [type]: { ...prev, ...colors } },
+      }
+      saveDefaultPalette(updated)
+      return { defaultPalette: updated }
+    })
+  },
+
+  setLineDefault: (colors) => {
+    set((state) => {
+      const updated: DefaultPalette = { ...state.defaultPalette, line: { ...state.defaultPalette.line, ...colors } }
+      saveDefaultPalette(updated)
+      return { defaultPalette: updated }
+    })
+  },
+
   addShape: (type, canvasX, canvasY) => {
     pushHistory(get, set)
-    const shape = createShape(type, canvasX, canvasY)
+    const palette = get().defaultPalette.shapes[type]
+    const shape = createShape(type, canvasX, canvasY, palette ? { fillColor: palette.fillColor, strokeColor: palette.strokeColor, textColor: palette.textColor } : undefined)
     set((state) => {
       const newShapes = [...state.shapes.map(s => ({ ...s, selected: false })), { ...shape, selected: true }]
       debouncedAutoSave(newShapes, state.lines)
@@ -376,7 +427,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       fromId,
       toId,
       label: '',
-      color: '#2d3436',
+      color: get().defaultPalette.line.color,
       directed: true,
     }
     set((state) => {

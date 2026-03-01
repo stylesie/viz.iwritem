@@ -1,8 +1,10 @@
 import { useDiagramStore } from '../../store/diagramStore'
 import type { TextZone, IconAlign } from '../../store/diagramStore'
+import type { ShapeType } from '../../core/model'
 import './PropertyPanel.css'
 
 const PALETTE = [
+  'transparent',
   '#2d3436', '#636e72', '#b2bec3', '#dfe6e9', '#ffffff',
   '#d63031', '#e17055', '#fdcb6e', '#ffeaa7', '#fab1a0',
   '#00b894', '#00cec9', '#0984e3', '#6c5ce7', '#a29bfe',
@@ -84,13 +86,22 @@ function ColorSwatch({ color, selected, onClick }: {
   selected: boolean
   onClick: () => void
 }) {
+  const isTransparent = color === 'transparent'
   return (
     <button
-      className={`color-swatch ${selected ? 'selected' : ''}`}
-      style={{ backgroundColor: color }}
+      className={`color-swatch ${selected ? 'selected' : ''} ${isTransparent ? 'transparent' : ''}`}
+      style={isTransparent ? undefined : { backgroundColor: color }}
       onClick={onClick}
-      title={color}
+      title={isTransparent ? 'Transparent' : color}
     />
+  )
+}
+
+function SetDefaultButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button className="set-default-btn" onClick={onClick} title="Use this color for all new shapes of this type">
+      Set as Default
+    </button>
   )
 }
 
@@ -100,10 +111,13 @@ function ShapeProperties() {
   const updateShapeColors = useDiagramStore(s => s.updateShapeColors)
   const updateShapeIcon = useDiagramStore(s => s.updateShapeIcon)
   const updateShapeIconAlign = useDiagramStore(s => s.updateShapeIconAlign)
+  const setShapeDefault = useDiagramStore(s => s.setShapeDefault)
 
   if (!selection || selection.type !== 'shape') return null
   const shape = shapes.find(s => s.id === selection.id)
   if (!shape) return null
+
+  const shapeType = shape.type as ShapeType
 
   return (
     <div className="property-panel">
@@ -119,12 +133,15 @@ function ShapeProperties() {
             />
           ))}
         </div>
-        <input
-          type="color"
-          className="color-input"
-          value={shape.fillColor}
-          onChange={e => updateShapeColors(shape.id, { fillColor: e.target.value })}
-        />
+        {shape.fillColor !== 'transparent' && (
+          <input
+            type="color"
+            className="color-input"
+            value={shape.fillColor}
+            onChange={e => updateShapeColors(shape.id, { fillColor: e.target.value })}
+          />
+        )}
+        <SetDefaultButton onClick={() => setShapeDefault(shapeType, { fillColor: shape.fillColor })} />
       </div>
 
       <div className="prop-section">
@@ -139,12 +156,15 @@ function ShapeProperties() {
             />
           ))}
         </div>
-        <input
-          type="color"
-          className="color-input"
-          value={shape.strokeColor}
-          onChange={e => updateShapeColors(shape.id, { strokeColor: e.target.value })}
-        />
+        {shape.strokeColor !== 'transparent' && (
+          <input
+            type="color"
+            className="color-input"
+            value={shape.strokeColor}
+            onChange={e => updateShapeColors(shape.id, { strokeColor: e.target.value })}
+          />
+        )}
+        <SetDefaultButton onClick={() => setShapeDefault(shapeType, { strokeColor: shape.strokeColor })} />
       </div>
 
       <div className="prop-section">
@@ -159,12 +179,15 @@ function ShapeProperties() {
             />
           ))}
         </div>
-        <input
-          type="color"
-          className="color-input"
-          value={shape.textColor}
-          onChange={e => updateShapeColors(shape.id, { textColor: e.target.value })}
-        />
+        {shape.textColor !== 'transparent' && (
+          <input
+            type="color"
+            className="color-input"
+            value={shape.textColor}
+            onChange={e => updateShapeColors(shape.id, { textColor: e.target.value })}
+          />
+        )}
+        <SetDefaultButton onClick={() => setShapeDefault(shapeType, { textColor: shape.textColor })} />
       </div>
 
       <div className="prop-section">
@@ -217,6 +240,7 @@ function LineProperties() {
   const selection = useDiagramStore(s => s.selection)
   const lines = useDiagramStore(s => s.lines)
   const updateLineColor = useDiagramStore(s => s.updateLineColor)
+  const setLineDefault = useDiagramStore(s => s.setLineDefault)
 
   if (!selection || selection.type !== 'line') return null
   const line = lines.find(l => l.id === selection.id)
@@ -227,7 +251,7 @@ function LineProperties() {
       <div className="prop-section">
         <div className="prop-label">Line Colour</div>
         <div className="color-grid">
-          {PALETTE.slice(0, 15).map(c => (
+          {PALETTE.slice(0, 16).map(c => (
             <ColorSwatch
               key={`line-${c}`}
               color={c}
@@ -236,12 +260,15 @@ function LineProperties() {
             />
           ))}
         </div>
-        <input
-          type="color"
-          className="color-input"
-          value={line.color}
-          onChange={e => updateLineColor(line.id, e.target.value)}
-        />
+        {line.color !== 'transparent' && (
+          <input
+            type="color"
+            className="color-input"
+            value={line.color}
+            onChange={e => updateLineColor(line.id, e.target.value)}
+          />
+        )}
+        <SetDefaultButton onClick={() => setLineDefault({ color: line.color })} />
       </div>
     </div>
   )

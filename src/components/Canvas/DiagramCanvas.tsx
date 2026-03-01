@@ -72,6 +72,18 @@ function drawShape(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingCont
     }
     case 'cylinder': {
       const ry = h * 0.12
+      // Fill body + bottom ellipse area (behind rough strokes)
+      if (fillColor !== 'transparent') {
+        ctx.save()
+        ctx.fillStyle = fillColor
+        // Body rectangle
+        ctx.fillRect(x, y + ry, w, h - ry * 2)
+        // Bottom ellipse fill
+        ctx.beginPath()
+        ctx.ellipse(x + w / 2, y + h - ry, w / 2, ry, 0, 0, Math.PI)
+        ctx.fill()
+        ctx.restore()
+      }
       // Body sides
       rc.line(x, y + ry, x, y + h - ry, options)
       rc.line(x + w, y + ry, x + w, y + h - ry, options)
@@ -79,8 +91,6 @@ function drawShape(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingCont
       rc.ellipse(x + w / 2, y + ry, w, ry * 2, options)
       // Bottom arc (half ellipse, bottom half)
       rc.arc(x + w / 2, y + h - ry, w, ry * 2, 0, Math.PI, false, options)
-      // Connect bottom sides with straight lines to close the body
-      rc.line(x, y + h - ry, x, y + h - ry, { ...options, stroke: 'transparent' }) // noop anchor
       break
     }
     case 'cloud': {

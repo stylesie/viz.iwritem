@@ -52,6 +52,16 @@ function drawShapeToCtx(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderin
     }
     case 'cylinder': {
       const ry = h * 0.12
+      // Fill body + bottom ellipse area (behind rough strokes)
+      if (fillColor !== 'transparent') {
+        ctx.save()
+        ctx.fillStyle = fillColor
+        ctx.fillRect(x, y + ry, w, h - ry * 2)
+        ctx.beginPath()
+        ctx.ellipse(x + w / 2, y + h - ry, w / 2, ry, 0, 0, Math.PI)
+        ctx.fill()
+        ctx.restore()
+      }
       rc.line(x, y + ry, x, y + h - ry, options)
       rc.line(x + w, y + ry, x + w, y + h - ry, options)
       rc.ellipse(x + w / 2, y + ry, w, ry * 2, options)
