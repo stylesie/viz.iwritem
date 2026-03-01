@@ -71,6 +71,7 @@ interface DiagramState {
   connecting: ConnectingState | null
   selection: SelectionKind
   layoutRunning: boolean
+  layoutLocked: boolean
   // Camera
   panX: number
   panY: number
@@ -120,6 +121,8 @@ interface DiagramState {
   cancelConnecting: () => void
 
   // Layout
+  toggleLayoutLock: () => void
+  forceLayout: () => void
   triggerLayout: () => void
 
   // Undo / Redo
@@ -213,6 +216,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   connecting: null,
   selection: null,
   layoutRunning: false,
+  layoutLocked: localStorage.getItem('idrawm-layout-locked') === 'true',
   panX: 0,
   panY: 0,
   zoom: 1,
@@ -493,8 +497,68 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   cancelConnecting: () => set({ connecting: null }),
 
   // Layout
+  toggleLayoutLock: () => {
+    set((state) => {
+      const next = !state.layoutLocked
+      localStorage.setItem('idrawm-layout-locked', String(next))
+      return { layoutLocked: next }
+    })
+  },
+
+  forceLayout: () => {
+    const state = get()
+    if (state.layoutRunning) return
+    if (state.lines.length === 0) return
+
+    pushHistory(get, set)
+    set({ layoutRunning: true })
+
+    const connectedIds = new Set<string>()
+    for (const l of state.lines) {
+      connectedIds.add(l.fromId)
+      connectedIds.add(l.toId)
+    }
+    const connectedShapes = state.shapes.filter(s => connectedIds.has(s.id))
+
+    runLayout(connectedShapes, state.lines).then(result => {
+      set((current) => {
+        const positions = result.positions
+        let curCx = 0, curCy = 0, layCx = 0, layCy = 0
+        let count = 0
+        for (const s of connectedShapes) {
+          const pos = positions.get(s.id)
+          if (pos) {
+            curCx += s.x + s.width / 2
+            curCy += s.y + s.height / 2
+            layCx += pos.x + s.width / 2
+            layCy += pos.y + s.height / 2
+            count++
+          }
+        }
+        if (count > 0) {
+          curCx /= count; curCy /= count
+          layCx /= count; layCy /= count
+        }
+        const offsetX = curCx - layCx
+        const offsetY = curCy - layCy
+
+        const newShapes = current.shapes.map(s => {
+          const pos = positions.get(s.id)
+          if (pos) return { ...s, x: pos.x + offsetX, y: pos.y + offsetY }
+          return s
+        })
+
+        debouncedAutoSave(newShapes, current.lines)
+        return { shapes: newShapes, layoutRunning: false }
+      })
+    }).catch(() => {
+      set({ layoutRunning: false })
+    })
+  },
+
   triggerLayout: () => {
     const state = get()
+    if (state.layoutLocked) return
     if (state.layoutRunning) return
     if (state.lines.length === 0) return
 
