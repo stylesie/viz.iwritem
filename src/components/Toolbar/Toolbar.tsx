@@ -9,10 +9,15 @@ import { downloadText, downloadBlob } from '../../export/download'
 import './Toolbar.css'
 
 const SHAPE_TOOLS: { type: ShapeType; label: string; icon: string }[] = [
-  { type: 'square', label: 'Rectangle', icon: '□' },
-  { type: 'circle', label: 'Oval', icon: '○' },
+  { type: 'rectangle', label: 'Rectangle', icon: '□' },
+  { type: 'ellipse', label: 'Ellipse', icon: '○' },
   { type: 'diamond', label: 'Diamond', icon: '◇' },
   { type: 'triangle', label: 'Triangle', icon: '△' },
+  { type: 'parallelogram', label: 'Parallel', icon: '▱' },
+  { type: 'rounded-rectangle', label: 'Rounded', icon: '▢' },
+  { type: 'hexagon', label: 'Hexagon', icon: '⬡' },
+  { type: 'cylinder', label: 'Cylinder', icon: '⌓' },
+  { type: 'cloud', label: 'Cloud', icon: '☁' },
 ]
 
 function ExportMenu() {

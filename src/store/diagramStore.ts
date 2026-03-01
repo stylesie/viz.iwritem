@@ -543,15 +543,27 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     try {
       const data = JSON.parse(json)
       if (data.shapes && Array.isArray(data.shapes)) {
+        // Migrate old shape types
+        const migratedShapes = data.shapes.map((s: Shape) => {
+          const migrated = { ...s }
+          const oldType = migrated.type as string
+          if (oldType === 'square') migrated.type = 'rectangle'
+          else if (oldType === 'circle' || oldType === 'oval') migrated.type = 'ellipse'
+          // Backfill missing IconAlign fields
+          if (!migrated.headerIconAlign) migrated.headerIconAlign = 'left'
+          if (!migrated.bodyIconAlign) migrated.bodyIconAlign = 'left'
+          if (!migrated.footerIconAlign) migrated.footerIconAlign = 'left'
+          return migrated
+        })
         pushHistory(get, set)
         set({
-          shapes: data.shapes,
+          shapes: migratedShapes,
           lines: data.lines || [],
           selection: null,
           editing: null,
           editingLine: null,
         })
-        debouncedAutoSave(data.shapes, data.lines || [])
+        debouncedAutoSave(migratedShapes, data.lines || [])
       }
     } catch {
       console.error('Failed to load diagram: invalid JSON')

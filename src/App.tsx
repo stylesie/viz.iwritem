@@ -9,10 +9,15 @@ import './App.css'
 
 const KEY_TO_TOOL: Record<string, ShapeType | 'select' | 'connect'> = {
   v: 'select',
-  r: 'square',
-  c: 'circle',
+  r: 'rectangle',
+  e: 'ellipse',
   d: 'diamond',
   t: 'triangle',
+  p: 'parallelogram',
+  u: 'rounded-rectangle',
+  h: 'hexagon',
+  y: 'cylinder',
+  k: 'cloud',
   l: 'connect',
 }
 

@@ -1,4 +1,4 @@
-export type ShapeType = 'circle' | 'oval' | 'square' | 'rectangle' | 'diamond' | 'triangle'
+export type ShapeType = 'rectangle' | 'ellipse' | 'diamond' | 'triangle' | 'parallelogram' | 'rounded-rectangle' | 'hexagon' | 'cylinder' | 'cloud'
 
 export type IconAlign = 'left' | 'center' | 'right'
 

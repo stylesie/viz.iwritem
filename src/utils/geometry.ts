@@ -35,19 +35,88 @@ export function pointInTriangle(px: number, py: number, x: number, y: number, w:
   return s >= 0 && t >= 0 && (1 - s - t) >= 0
 }
 
+function pointInPolygon(px: number, py: number, verts: Point[]): boolean {
+  let inside = false
+  for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+    const xi = verts[i].x, yi = verts[i].y
+    const xj = verts[j].x, yj = verts[j].y
+    if ((yi > py) !== (yj > py) && px < (xj - xi) * (py - yi) / (yj - yi) + xi) {
+      inside = !inside
+    }
+  }
+  return inside
+}
+
+/**
+ * Returns polygon vertices for polygon-based shapes.
+ * Used by canvas, SVG, PNG rendering and hit testing to avoid duplicating vertex math.
+ */
+export function getPolygonVertices(shape: Shape): Point[] | null {
+  const { x, y, width: w, height: h, type } = shape
+  switch (type) {
+    case 'diamond':
+      return [
+        { x: x + w / 2, y },
+        { x: x + w, y: y + h / 2 },
+        { x: x + w / 2, y: y + h },
+        { x, y: y + h / 2 },
+      ]
+    case 'triangle':
+      return [
+        { x: x + w / 2, y },
+        { x: x + w, y: y + h },
+        { x, y: y + h },
+      ]
+    case 'parallelogram': {
+      const skew = w * 0.2
+      return [
+        { x: x + skew, y },
+        { x: x + w, y },
+        { x: x + w - skew, y: y + h },
+        { x, y: y + h },
+      ]
+    }
+    case 'hexagon': {
+      // Flat-top hexagon
+      const cx = x + w / 2
+      const cy = y + h / 2
+      const rx = w / 2
+      const ry = h / 2
+      const pts: Point[] = []
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI / 3) * i
+        pts.push({
+          x: cx + rx * Math.cos(angle),
+          y: cy + ry * Math.sin(angle),
+        })
+      }
+      return pts
+    }
+    default:
+      return null
+  }
+}
+
 export function hitTestShape(shape: Shape, px: number, py: number): boolean {
   const { x, y, width: w, height: h, type } = shape
   switch (type) {
     case 'rectangle':
-    case 'square':
+    case 'rounded-rectangle':
+    case 'cylinder':
       return pointInRect(px, py, x, y, w, h)
-    case 'circle':
-    case 'oval':
+    case 'ellipse':
+    case 'cloud':
       return pointInEllipse(px, py, x + w / 2, y + h / 2, w / 2, h / 2)
     case 'diamond':
       return pointInDiamond(px, py, x, y, w, h)
     case 'triangle':
       return pointInTriangle(px, py, x, y, w, h)
+    case 'parallelogram':
+    case 'hexagon': {
+      const verts = getPolygonVertices(shape)
+      if (verts) return pointInPolygon(px, py, verts)
+      return pointInRect(px, py, x, y, w, h)
+    }
     default:
       return pointInRect(px, py, x, y, w, h)
   }
@@ -72,8 +141,8 @@ export function getShapeEdgePoint(shape: Shape, target: Point): Point {
   const { type, x, y, width: w, height: h } = shape
 
   switch (type) {
-    case 'circle':
-    case 'oval': {
+    case 'ellipse':
+    case 'cloud': {
       const rx = w / 2
       const ry = h / 2
       const angle = Math.atan2(dy, dx)
@@ -83,7 +152,6 @@ export function getShapeEdgePoint(shape: Shape, target: Point): Point {
       }
     }
     case 'diamond': {
-      // Diamond edges: find intersection with diamond boundary
       const hw = w / 2
       const hh = h / 2
       const absDx = Math.abs(dx)
@@ -94,17 +162,15 @@ export function getShapeEdgePoint(shape: Shape, target: Point): Point {
         y: cy + dy * scale,
       }
     }
-    case 'triangle': {
-      // Triangle vertices: top-center, bottom-left, bottom-right
-      const verts: Point[] = [
-        { x: x + w / 2, y },           // top
-        { x: x + w,     y: y + h },    // bottom-right
-        { x,             y: y + h },    // bottom-left
-      ]
-      return polygonEdgeIntersect(cx, cy, dx, dy, verts)
+    case 'triangle':
+    case 'parallelogram':
+    case 'hexagon': {
+      const verts = getPolygonVertices(shape)
+      if (verts) return polygonEdgeIntersect(cx, cy, dx, dy, verts)
+      return rectEdgeIntersect(cx, cy, x, y, w, h, dx, dy)
     }
     default: {
-      // Rectangle/square
+      // rectangle, rounded-rectangle, cylinder
       return rectEdgeIntersect(cx, cy, x, y, w, h, dx, dy)
     }
   }

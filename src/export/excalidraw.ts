@@ -97,16 +97,18 @@ function baseElement(overrides: Partial<ExBase> & { id: string; type: string; x:
 
 function shapeToExcalidrawType(type: Shape['type']): 'rectangle' | 'ellipse' | 'diamond' {
   switch (type) {
-    case 'square':
     case 'rectangle':
+    case 'rounded-rectangle':
+    case 'parallelogram':
       return 'rectangle'
-    case 'circle':
-    case 'oval':
+    case 'ellipse':
+    case 'cylinder':
+    case 'cloud':
       return 'ellipse'
     case 'diamond':
+    case 'hexagon':
       return 'diamond'
     case 'triangle':
-      // Excalidraw has no native triangle — use diamond as closest approximation
       return 'diamond'
     default:
       return 'rectangle'

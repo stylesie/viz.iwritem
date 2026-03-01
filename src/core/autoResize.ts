@@ -1,4 +1,4 @@
-import type { Shape, ShapeType, IconAlign } from './model'
+import type { Shape, IconAlign } from './model'
 import { MIN_SHAPE_SIZE, DEFAULT_SHAPE_SIZE } from './model'
 
 const PADDING_X = 24
@@ -209,22 +209,21 @@ export function autoResizeShape(shape: Shape): Partial<Shape> {
     shape.headerIcon || shape.bodyIcon || shape.footerIcon
 
   if (!hasText) {
-    // No text — return to default square/circle size
+    // No text — return to default size
     const size = DEFAULT_SHAPE_SIZE
     const cx = shape.x + shape.width / 2
     const cy = shape.y + shape.height / 2
-    const baseType = morphType(shape.type, size, size)
     return {
       width: size,
       height: size,
-      type: baseType,
       x: cx - size / 2,
       y: cy - size / 2,
     }
   }
 
-  // Extra padding for diamonds and triangles (text area is smaller than bounding box)
-  const shapePaddingMultiplier = (shape.type === 'diamond' || shape.type === 'triangle') ? 1.6 : 1
+  // Extra padding for shapes whose usable text area is smaller than bounding box
+  const needsExtraPadding = shape.type === 'diamond' || shape.type === 'triangle' || shape.type === 'parallelogram' || shape.type === 'cloud'
+  const shapePaddingMultiplier = needsExtraPadding ? 1.6 : 1
 
   const requiredW = Math.max(
     MIN_SHAPE_SIZE,
@@ -239,35 +238,11 @@ export function autoResizeShape(shape: Shape): Partial<Shape> {
   const cx = shape.x + shape.width / 2
   const cy = shape.y + shape.height / 2
 
-  const newType = morphType(shape.type, requiredW, requiredH)
-
   return {
     width: requiredW,
     height: requiredH,
-    type: newType,
     x: cx - requiredW / 2,
     y: cy - requiredH / 2,
-  }
-}
-
-/**
- * Morph shape type based on aspect ratio:
- * - circle ↔ oval (when width ≠ height)
- * - square ↔ rectangle (when width ≠ height)
- * Diamond and triangle stay as they are.
- */
-function morphType(currentType: ShapeType, w: number, h: number): ShapeType {
-  const isSquarish = Math.abs(w - h) < 8 // tolerance
-
-  switch (currentType) {
-    case 'circle':
-    case 'oval':
-      return isSquarish ? 'circle' : 'oval'
-    case 'square':
-    case 'rectangle':
-      return isSquarish ? 'square' : 'rectangle'
-    default:
-      return currentType
   }
 }
 

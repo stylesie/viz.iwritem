@@ -3,7 +3,7 @@ import { useGesture } from '@use-gesture/react'
 import rough from 'roughjs'
 import { useDiagramStore } from '../../store/diagramStore'
 import type { Theme } from '../../store/diagramStore'
-import { hitTestShape, getShapeCenter, getShapeEdgePoint, pointToSegmentDist } from '../../utils/geometry'
+import { hitTestShape, getShapeCenter, getShapeEdgePoint, pointToSegmentDist, getPolygonVertices } from '../../utils/geometry'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../../core/autoResize'
 import type { Shape, Line } from '../../core/model'
 import type { TextZoneLayout } from '../../core/autoResize'
@@ -50,28 +50,55 @@ function drawShape(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingCont
 
   switch (type) {
     case 'rectangle':
-    case 'square':
       rc.rectangle(x, y, w, h, options)
       break
-    case 'circle':
-    case 'oval':
+    case 'ellipse':
       rc.ellipse(x + w / 2, y + h / 2, w, h, options)
       break
     case 'diamond':
-      rc.polygon([
-        [x + w / 2, y],
-        [x + w, y + h / 2],
-        [x + w / 2, y + h],
-        [x, y + h / 2],
-      ], options)
-      break
     case 'triangle':
-      rc.polygon([
-        [x + w / 2, y],
-        [x + w, y + h],
-        [x, y + h],
-      ], options)
+    case 'parallelogram':
+    case 'hexagon': {
+      const verts = getPolygonVertices(shape)
+      if (verts) {
+        rc.polygon(verts.map(v => [v.x, v.y] as [number, number]), options)
+      }
       break
+    }
+    case 'rounded-rectangle': {
+      const r = Math.min(w, h) * 0.2
+      rc.path(`M ${x + r} ${y} L ${x + w - r} ${y} Q ${x + w} ${y} ${x + w} ${y + r} L ${x + w} ${y + h - r} Q ${x + w} ${y + h} ${x + w - r} ${y + h} L ${x + r} ${y + h} Q ${x} ${y + h} ${x} ${y + h - r} L ${x} ${y + r} Q ${x} ${y} ${x + r} ${y} Z`, options)
+      break
+    }
+    case 'cylinder': {
+      const ry = h * 0.12
+      // Body sides
+      rc.line(x, y + ry, x, y + h - ry, options)
+      rc.line(x + w, y + ry, x + w, y + h - ry, options)
+      // Top ellipse (full)
+      rc.ellipse(x + w / 2, y + ry, w, ry * 2, options)
+      // Bottom arc (half ellipse, bottom half)
+      rc.arc(x + w / 2, y + h - ry, w, ry * 2, 0, Math.PI, false, options)
+      // Connect bottom sides with straight lines to close the body
+      rc.line(x, y + h - ry, x, y + h - ry, { ...options, stroke: 'transparent' }) // noop anchor
+      break
+    }
+    case 'cloud': {
+      // Cloud shape using bezier curves
+      const cx = x + w / 2, cy = y + h / 2
+      const rx = w / 2, ry = h / 2
+      rc.path(
+        `M ${cx - rx * 0.4} ${cy + ry * 0.6}` +
+        ` C ${cx - rx * 0.9} ${cy + ry * 0.6}, ${cx - rx} ${cy - ry * 0.1}, ${cx - rx * 0.5} ${cy - ry * 0.4}` +
+        ` C ${cx - rx * 0.6} ${cy - ry}, ${cx - rx * 0.1} ${cy - ry * 1.05}, ${cx + rx * 0.15} ${cy - ry * 0.6}` +
+        ` C ${cx + rx * 0.3} ${cy - ry * 1.05}, ${cx + rx * 0.8} ${cy - ry * 0.8}, ${cx + rx * 0.7} ${cy - ry * 0.2}` +
+        ` C ${cx + rx * 1.05} ${cy - ry * 0.2}, ${cx + rx * 1.0} ${cy + ry * 0.5}, ${cx + rx * 0.5} ${cy + ry * 0.6}` +
+        ` C ${cx + rx * 0.3} ${cy + ry * 0.95}, ${cx - rx * 0.2} ${cy + ry * 0.95}, ${cx - rx * 0.4} ${cy + ry * 0.6}` +
+        ` Z`,
+        options,
+      )
+      break
+    }
   }
 
   const hasContent = shape.header || shape.body || shape.footer ||

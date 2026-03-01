@@ -1,6 +1,6 @@
 import type { Shape, Line } from '../core/model'
-import { computeTextLayout, ICON_SIZE, ICON_GAP } from '../core/autoResize'
-import { getShapeCenter, getShapeEdgePoint } from '../utils/geometry'
+import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../core/autoResize'
+import { getShapeCenter, getShapeEdgePoint, getPolygonVertices } from '../utils/geometry'
 
 const EXPORT_PADDING = 40
 
@@ -26,23 +26,51 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
   const parts: string[] = []
 
   // Shape outline
+  const svgAttrs = `fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.5"`
   switch (type) {
     case 'rectangle':
-    case 'square':
-      parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.5" rx="2"/>`)
+      parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" ${svgAttrs} rx="2"/>`)
       break
-    case 'circle':
-    case 'oval':
-      parts.push(`<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.5"/>`)
+    case 'ellipse':
+      parts.push(`<ellipse cx="${x + w / 2}" cy="${y + h / 2}" rx="${w / 2}" ry="${h / 2}" ${svgAttrs}/>`)
       break
-    case 'diamond': {
-      const pts = `${x + w / 2},${y} ${x + w},${y + h / 2} ${x + w / 2},${y + h} ${x},${y + h / 2}`
-      parts.push(`<polygon points="${pts}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.5"/>`)
+    case 'diamond':
+    case 'triangle':
+    case 'parallelogram':
+    case 'hexagon': {
+      const verts = getPolygonVertices({ ...shape, x, y })
+      if (verts) {
+        const pts = verts.map(v => `${v.x},${v.y}`).join(' ')
+        parts.push(`<polygon points="${pts}" ${svgAttrs}/>`)
+      }
       break
     }
-    case 'triangle': {
-      const pts = `${x + w / 2},${y} ${x + w},${y + h} ${x},${y + h}`
-      parts.push(`<polygon points="${pts}" fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.5"/>`)
+    case 'rounded-rectangle': {
+      const r = Math.min(w, h) * 0.2
+      parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" ${svgAttrs} rx="${r}" ry="${r}"/>`)
+      break
+    }
+    case 'cylinder': {
+      const ry = h * 0.12
+      parts.push(`<ellipse cx="${x + w / 2}" cy="${y + ry}" rx="${w / 2}" ry="${ry}" ${svgAttrs}/>`)
+      parts.push(`<rect x="${x}" y="${y + ry}" width="${w}" height="${h - ry * 2}" fill="${fillColor}" stroke="none"/>`)
+      parts.push(`<line x1="${x}" y1="${y + ry}" x2="${x}" y2="${y + h - ry}" stroke="${strokeColor}" stroke-width="1.5"/>`)
+      parts.push(`<line x1="${x + w}" y1="${y + ry}" x2="${x + w}" y2="${y + h - ry}" stroke="${strokeColor}" stroke-width="1.5"/>`)
+      parts.push(`<path d="M ${x} ${y + h - ry} A ${w / 2} ${ry} 0 0 0 ${x + w} ${y + h - ry}" fill="none" stroke="${strokeColor}" stroke-width="1.5"/>`)
+      break
+    }
+    case 'cloud': {
+      const cx = x + w / 2, cy = y + h / 2
+      const rx = w / 2, ry = h / 2
+      const d =
+        `M ${cx - rx * 0.4} ${cy + ry * 0.6}` +
+        ` C ${cx - rx * 0.9} ${cy + ry * 0.6}, ${cx - rx} ${cy - ry * 0.1}, ${cx - rx * 0.5} ${cy - ry * 0.4}` +
+        ` C ${cx - rx * 0.6} ${cy - ry}, ${cx - rx * 0.1} ${cy - ry * 1.05}, ${cx + rx * 0.15} ${cy - ry * 0.6}` +
+        ` C ${cx + rx * 0.3} ${cy - ry * 1.05}, ${cx + rx * 0.8} ${cy - ry * 0.8}, ${cx + rx * 0.7} ${cy - ry * 0.2}` +
+        ` C ${cx + rx * 1.05} ${cy - ry * 0.2}, ${cx + rx * 1.0} ${cy + ry * 0.5}, ${cx + rx * 0.5} ${cy + ry * 0.6}` +
+        ` C ${cx + rx * 0.3} ${cy + ry * 0.95}, ${cx - rx * 0.2} ${cy + ry * 0.95}, ${cx - rx * 0.4} ${cy + ry * 0.6}` +
+        ` Z`
+      parts.push(`<path d="${d}" ${svgAttrs}/>`)
       break
     }
   }
@@ -58,19 +86,48 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
     for (const zone of zones) {
       if (!zone) continue
       const hasIcon = !!zone.icon
-      const iconOffset = hasIcon ? (ICON_SIZE + ICON_GAP) / 2 : 0
-      const textCenterX = x + w / 2 + iconOffset
+      const align = zone.iconAlign
 
-      if (hasIcon) {
-        const iconX = textCenterX - iconOffset - ICON_SIZE / 2
+      if (hasIcon && align === 'center') {
+        const iconX = x + w / 2
         parts.push(`<text x="${iconX}" y="${contentTop + zone.y + ICON_SIZE}" font-size="${ICON_SIZE}" text-anchor="middle" fill="${shape.textColor}">${escapeXml(zone.icon)}</text>`)
-      }
-
-      for (let i = 0; i < zone.lines.length; i++) {
-        const lineText = zone.lines[i].trim()
-        if (lineText) {
-          const ly = contentTop + zone.y + i * zone.lineHeight + zone.lineHeight * 0.8
-          parts.push(`<text x="${textCenterX}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="middle" fill="${shape.textColor}">${escapeXml(lineText)}</text>`)
+        const textStartY = contentTop + zone.y + ICON_SIZE + ICON_GAP
+        for (let i = 0; i < zone.lines.length; i++) {
+          const lineText = zone.lines[i].trim()
+          if (lineText) {
+            const ly = textStartY + i * zone.lineHeight + zone.lineHeight * 0.8
+            parts.push(`<text x="${x + w / 2}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="middle" fill="${shape.textColor}">${escapeXml(lineText)}</text>`)
+          }
+        }
+      } else if (hasIcon && align === 'right') {
+        const iconX = x + w - PADDING_X
+        parts.push(`<text x="${iconX}" y="${contentTop + zone.y + ICON_SIZE}" font-size="${ICON_SIZE}" text-anchor="middle" fill="${shape.textColor}">${escapeXml(zone.icon)}</text>`)
+        const textRightEdge = iconX - ICON_SIZE / 2 - ICON_GAP
+        for (let i = 0; i < zone.lines.length; i++) {
+          const lineText = zone.lines[i].trim()
+          if (lineText) {
+            const ly = contentTop + zone.y + i * zone.lineHeight + zone.lineHeight * 0.8
+            parts.push(`<text x="${textRightEdge}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="end" fill="${shape.textColor}">${escapeXml(lineText)}</text>`)
+          }
+        }
+      } else if (hasIcon) {
+        const iconX = x + PADDING_X
+        parts.push(`<text x="${iconX}" y="${contentTop + zone.y + ICON_SIZE}" font-size="${ICON_SIZE}" text-anchor="middle" fill="${shape.textColor}">${escapeXml(zone.icon)}</text>`)
+        const textLeftEdge = iconX + ICON_SIZE / 2 + ICON_GAP
+        for (let i = 0; i < zone.lines.length; i++) {
+          const lineText = zone.lines[i].trim()
+          if (lineText) {
+            const ly = contentTop + zone.y + i * zone.lineHeight + zone.lineHeight * 0.8
+            parts.push(`<text x="${textLeftEdge}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="start" fill="${shape.textColor}">${escapeXml(lineText)}</text>`)
+          }
+        }
+      } else {
+        for (let i = 0; i < zone.lines.length; i++) {
+          const lineText = zone.lines[i].trim()
+          if (lineText) {
+            const ly = contentTop + zone.y + i * zone.lineHeight + zone.lineHeight * 0.8
+            parts.push(`<text x="${x + w / 2}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="middle" fill="${shape.textColor}">${escapeXml(lineText)}</text>`)
+          }
         }
       }
     }
