@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" shape-rendering="auto">
-  <rect width="512" height="512" rx="80" fill="#1a1a2e"/>
+  <rect width="512" height="512" fill="#1a1a2e"/>
   <g transform="translate(256,256)">
     <!-- Diamond shape -->
     <polygon points="0,-130 130,0 0,130 -130,0" fill="none" stroke="#00FC20" stroke-width="24" stroke-linejoin="round"/>

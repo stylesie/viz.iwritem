@@ -40,7 +40,21 @@ export default defineConfig({
         orientation: 'any',
       },
       pwaAssets: {
-        preset: 'minimal-2023',
+        preset: {
+          transparent: {
+            sizes: [64, 192, 512],
+            favicons: [[64, 'favicon.ico']],
+            padding: 0,
+          },
+          maskable: {
+            sizes: [512],
+            padding: 0,
+          },
+          apple: {
+            sizes: [180],
+            padding: 0,
+          },
+        },
         image: 'public/favicon.svg',
         overrideManifestIcons: true,
         includeHtmlHeadLinks: true,
