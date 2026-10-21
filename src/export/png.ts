@@ -1,4 +1,4 @@
-import type { Shape, Line } from '../core/model'
+import type { Shape, Line, FreeLine } from '../core/model'
 import rough from 'roughjs'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../core/autoResize'
 import { getPolygonVertices } from '../utils/geometry'
@@ -7,13 +7,19 @@ import type { TextZoneLayout } from '../core/autoResize'
 
 const EXPORT_PADDING = 40
 
-function getBounds(shapes: Shape[]): { minX: number; minY: number; maxX: number; maxY: number } {
+function getBounds(shapes: Shape[], freeLines: FreeLine[]): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const s of shapes) {
     minX = Math.min(minX, s.x)
     minY = Math.min(minY, s.y)
     maxX = Math.max(maxX, s.x + s.width)
     maxY = Math.max(maxY, s.y + s.height)
+  }
+  for (const f of freeLines) {
+    minX = Math.min(minX, f.x1, f.x2)
+    minY = Math.min(minY, f.y1, f.y2)
+    maxX = Math.max(maxX, f.x1, f.x2)
+    maxY = Math.max(maxY, f.y1, f.y2)
   }
   return { minX, minY, maxX, maxY }
 }
@@ -221,14 +227,14 @@ function drawLineToCtx(ctx: CanvasRenderingContext2D, line: Line, shapes: Shape[
   ctx.restore()
 }
 
-export function exportToPng(shapes: Shape[], lines: Line[]): Promise<Blob> {
+export function exportToPng(shapes: Shape[], lines: Line[], freeLines: FreeLine[] = []): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    if (shapes.length === 0) {
+    if (shapes.length === 0 && freeLines.length === 0) {
       reject(new Error('Nothing to export'))
       return
     }
 
-    const bounds = getBounds(shapes)
+    const bounds = getBounds(shapes, freeLines)
     const w = bounds.maxX - bounds.minX + EXPORT_PADDING * 2
     const h = bounds.maxY - bounds.minY + EXPORT_PADDING * 2
 
@@ -248,6 +254,17 @@ export function exportToPng(shapes: Shape[], lines: Line[]): Promise<Blob> {
     // Draw lines first
     for (const line of lines) {
       drawLineToCtx(ctx, line, shapes)
+    }
+    for (const f of freeLines) {
+      ctx.save()
+      ctx.strokeStyle = f.color
+      ctx.lineWidth = 2
+      ctx.lineCap = 'round'
+      ctx.beginPath()
+      ctx.moveTo(f.x1, f.y1)
+      ctx.lineTo(f.x2, f.y2)
+      ctx.stroke()
+      ctx.restore()
     }
 
     // Draw shapes

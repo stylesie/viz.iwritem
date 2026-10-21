@@ -42,6 +42,7 @@ function ExportMenu() {
   const menuRef = useRef<HTMLDivElement>(null)
   const shapes = useDiagramStore(s => s.shapes)
   const lines = useDiagramStore(s => s.lines)
+  const freeLines = useDiagramStore(s => s.freeLines)
 
   useEffect(() => {
     if (!open) return
@@ -54,17 +55,17 @@ function ExportMenu() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [open])
 
-  const hasContent = shapes.length > 0
+  const hasContent = shapes.length > 0 || freeLines.length > 0
 
   const handleExcalidraw = () => {
-    const json = exportToExcalidraw(shapes, lines)
+    const json = exportToExcalidraw(shapes, lines, freeLines)
     downloadText(json, 'diagram.excalidraw', 'application/json')
     setOpen(false)
   }
 
   const handlePng = async () => {
     try {
-      const blob = await exportToPng(shapes, lines)
+      const blob = await exportToPng(shapes, lines, freeLines)
       downloadBlob(blob, 'diagram.png')
     } catch (err) {
       console.error('PNG export failed:', err)
@@ -73,7 +74,7 @@ function ExportMenu() {
   }
 
   const handleSvg = () => {
-    const svg = exportToSvg(shapes, lines)
+    const svg = exportToSvg(shapes, lines, freeLines)
     downloadText(svg, 'diagram.svg', 'image/svg+xml')
     setOpen(false)
   }
@@ -197,7 +198,7 @@ export default function Toolbar() {
         <button
           className="tool-btn"
           onClick={redo}
-          disabled={historyIndex >= historyLength - 1}
+          disabled={historyIndex >= historyLength - 2}
           title="Redo (Ctrl+Shift+Z)"
         >
           <span className="tool-icon">{'\u21AA'}</span>
@@ -244,6 +245,14 @@ export default function Toolbar() {
         >
           <span className="tool-icon">{'\u2197'}</span>
           <span className="tool-label">Connect</span>
+        </button>
+        <button
+          className={`tool-btn ${activeTool === 'freeLine' ? 'active' : ''}`}
+          onClick={() => handleToolClick('freeLine')}
+          title="Line: drag to draw (hold Shift for 45° steps)"
+        >
+          <span className="tool-icon">{'\u2215'}</span>
+          <span className="tool-label">Line</span>
         </button>
       </div>
 

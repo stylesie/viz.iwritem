@@ -25,6 +25,11 @@ Select the **Connect** tool (or press `L`), then drag from one shape to another 
 
 Lines take a straight path when nothing is in the way, and bend around shapes otherwise.
 
+### Lines
+Select the **Line** tool and drag to draw a free-standing line (for dividers, underlines and the like). It isn't attached to any shape, and connectors don't route around it. Hold `Shift` (or turn on **Angle**) for exact horizontal, vertical and 45° diagonal lines; with **Grid** on, both ends snap to the grid.
+
+Click a line to select it, drag its middle to move it, or drag the round handle at either end to reshape it. The same Shift/Angle and Grid rules apply.
+
 ### Grid and Angle Lock
 **Grid** -- Turn on to snap shape centres to the 20px grid. Turning it on aligns every existing shape (undoable); new shapes, dragged shapes and Arrange results all land on grid points.
 
@@ -42,7 +47,7 @@ Select a shape or line to open the property panel on the right:
 
 - **Fill / Border / Text colors** -- Pick from the palette or use the color picker. The first swatch is transparent (checkerboard pattern).
 - **Icons** -- Assign emoji icons to any text zone (header, body, footer) with left/center/right alignment.
-- **Line color** -- Same palette, applied to the selected connection.
+- **Line color** -- Same palette, applied to the selected connection or line.
 
 ### Default Colors
 Each "Set as Default" button saves the current color as the default for that shape type. New shapes of that type will use your chosen colors. Line defaults work the same way. Defaults persist across sessions.

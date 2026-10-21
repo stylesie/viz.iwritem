@@ -39,7 +39,7 @@ export default function App() {
   // Restore auto-saved diagram on mount
   useEffect(() => {
     loadAutoSave().then(data => {
-      if (data && data.shapes.length > 0) {
+      if (data && (data.shapes.length > 0 || (data.freeLines?.length ?? 0) > 0)) {
         useDiagramStore.getState().loadDiagram(JSON.stringify(data))
       }
     })

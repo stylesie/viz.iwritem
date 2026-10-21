@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Shape, ShapeType, Line, IconAlign } from '../core/model'
+import type { Shape, ShapeType, Line, FreeLine, IconAlign } from '../core/model'
 import { createShape, generateId, snapToGrid, snapShapePosition } from '../core/model'
 import { autoResizeShape } from '../core/autoResize'
 import { runLayout } from '../core/layout'
@@ -31,7 +31,7 @@ function saveDefaultPalette(palette: DefaultPalette) {
   localStorage.setItem(DEFAULTS_KEY, JSON.stringify(palette))
 }
 
-export type Tool = 'select' | 'connect' | ShapeType
+export type Tool = 'select' | 'connect' | 'freeLine' | ShapeType
 
 export type TextZone = 'header' | 'body' | 'footer'
 
@@ -53,11 +53,12 @@ interface ConnectingState {
 
 export type Theme = 'light' | 'dark'
 
-type SelectionKind = { type: 'shape'; id: string } | { type: 'line'; id: string } | null
+type SelectionKind = { type: 'shape'; id: string } | { type: 'line'; id: string } | { type: 'freeLine'; id: string } | null
 
 interface HistoryEntry {
   shapes: Shape[]
   lines: Line[]
+  freeLines: FreeLine[]
 }
 
 const MAX_HISTORY = 50
@@ -65,6 +66,7 @@ const MAX_HISTORY = 50
 interface DiagramState {
   shapes: Shape[]
   lines: Line[]
+  freeLines: FreeLine[]
   activeTool: Tool
   editing: EditingState | null
   editingLine: EditingLineState | null
@@ -111,6 +113,11 @@ interface DiagramState {
   updateShapeIconAlign: (id: string, zone: TextZone, align: IconAlign) => void
   updateLineColor: (id: string, color: string) => void
 
+  // Free line actions
+  addFreeLine: (x1: number, y1: number, x2: number, y2: number) => void
+  selectFreeLine: (id: string | null) => void
+  setFreeLinePoints: (id: string, x1: number, y1: number, x2: number, y2: number) => void
+
   // Line actions
   addLine: (fromId: string, toId: string) => void
   updateLineLabel: (id: string, label: string) => void
@@ -145,12 +152,17 @@ interface DiagramState {
   canvasToScreen: (cx: number, cy: number) => { x: number; y: number }
 }
 
-/** Push a snapshot of shapes+lines onto the history stack */
+/**
+ * Push a snapshot of the current (pre-action) state onto the history stack.
+ * history[historyIndex] is always the state undo restores next; the present state is
+ * only recorded (as history[historyIndex + 1]) once undo is used, so redo can return to it.
+ */
 function pushHistory(get: () => DiagramState, set: (fn: (s: DiagramState) => Partial<DiagramState>) => void) {
-  const { shapes, lines, history, historyIndex } = get()
+  const { shapes, lines, freeLines, history, historyIndex } = get()
   const entry: HistoryEntry = {
     shapes: shapes.map(s => ({ ...s })),
     lines: lines.map(l => ({ ...l })),
+    freeLines: freeLines.map(f => ({ ...f })),
   }
   // Discard any redo entries beyond current index
   const newHistory = [...history.slice(0, historyIndex + 1), entry]
@@ -175,11 +187,12 @@ function openDb(): Promise<IDBDatabase> {
   })
 }
 
-async function autoSave(shapes: Shape[], lines: Line[]) {
+async function autoSave() {
+  const { shapes, lines, freeLines } = useDiagramStore.getState()
   try {
     const db = await openDb()
     const tx = db.transaction(DB_STORE, 'readwrite')
-    tx.objectStore(DB_STORE).put({ shapes, lines }, AUTO_SAVE_KEY)
+    tx.objectStore(DB_STORE).put({ shapes, lines, freeLines }, AUTO_SAVE_KEY)
     db.close()
   } catch {
     // Silently fail auto-save
@@ -187,12 +200,13 @@ async function autoSave(shapes: Shape[], lines: Line[]) {
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
-function debouncedAutoSave(shapes: Shape[], lines: Line[]) {
+// Reads the store when the timer fires, so callers needn't pass the latest arrays
+function debouncedAutoSave() {
   if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => autoSave(shapes, lines), 500)
+  saveTimer = setTimeout(() => autoSave(), 500)
 }
 
-export async function loadAutoSave(): Promise<{ shapes: Shape[]; lines: Line[] } | null> {
+export async function loadAutoSave(): Promise<{ shapes: Shape[]; lines: Line[]; freeLines?: FreeLine[] } | null> {
   try {
     const db = await openDb()
     return new Promise((resolve) => {
@@ -215,6 +229,7 @@ export async function loadAutoSave(): Promise<{ shapes: Shape[]; lines: Line[] }
 export const useDiagramStore = create<DiagramState>((set, get) => ({
   shapes: [],
   lines: [],
+  freeLines: [],
   activeTool: 'select',
   editing: null,
   editingLine: null,
@@ -229,7 +244,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   zoom: 1,
   theme: (localStorage.getItem('idrawm-theme') as Theme) || 'light',
   defaultPalette: loadDefaultPalette(),
-  history: [{ shapes: [], lines: [] }],
+  history: [{ shapes: [], lines: [], freeLines: [] }],
   historyIndex: 0,
 
   setTool: (tool) => set({ activeTool: tool }),
@@ -269,7 +284,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     const shape = createShape(type, snap ? snapToGrid(canvasX) : canvasX, snap ? snapToGrid(canvasY) : canvasY, palette ? { fillColor: palette.fillColor, strokeColor: palette.strokeColor, textColor: palette.textColor } : undefined)
     set((state) => {
       const newShapes = [...state.shapes.map(s => ({ ...s, selected: false })), { ...shape, selected: true }]
-      debouncedAutoSave(newShapes, state.lines)
+      debouncedAutoSave()
       return {
         shapes: newShapes,
         activeTool: 'select',
@@ -304,7 +319,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       const newShapes = state.shapes.map(s =>
         s.id === id ? { ...s, x: s.x + dx, y: s.y + dy } : s
       )
-      debouncedAutoSave(newShapes, state.lines)
+      debouncedAutoSave()
       return { shapes: newShapes }
     })
   },
@@ -312,7 +327,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   setShapePosition: (id, x, y) => {
     set((state) => {
       const newShapes = state.shapes.map(s => (s.id === id ? { ...s, x, y } : s))
-      debouncedAutoSave(newShapes, state.lines)
+      debouncedAutoSave()
       return { shapes: newShapes }
     })
   },
@@ -338,7 +353,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
         selection: null,
         editing: editing?.shapeId === deletedId ? null : editing,
       })
-      debouncedAutoSave(newShapes, newLines)
+      debouncedAutoSave()
       get().triggerLayout()
     } else if (selection.type === 'line') {
       const deletedId = selection.id
@@ -348,8 +363,11 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
         selection: null,
         editingLine: editingLine?.lineId === deletedId ? null : editingLine,
       })
-      debouncedAutoSave(shapes, newLines)
+      debouncedAutoSave()
       get().triggerLayout()
+    } else if (selection.type === 'freeLine') {
+      set((state) => ({ freeLines: state.freeLines.filter(f => f.id !== selection.id), selection: null }))
+      debouncedAutoSave()
     }
   },
 
@@ -366,7 +384,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
         const resized = autoResizeShape(updated)
         return { ...updated, ...resized }
       })
-      debouncedAutoSave(newShapes, state.lines)
+      debouncedAutoSave()
       return { shapes: newShapes }
     })
     get().triggerLayout()
@@ -390,7 +408,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       const newShapes = state.shapes.map(s =>
         s.id === id ? { ...s, ...colors } : s
       )
-      debouncedAutoSave(newShapes, state.lines)
+      debouncedAutoSave()
       return { shapes: newShapes }
     })
   },
@@ -402,7 +420,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       const newShapes = state.shapes.map(s =>
         s.id === id ? { ...s, [iconKey]: icon } : s
       )
-      debouncedAutoSave(newShapes, state.lines)
+      debouncedAutoSave()
       return { shapes: newShapes }
     })
   },
@@ -417,7 +435,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
         const resized = autoResizeShape(updated)
         return { ...updated, ...resized }
       })
-      debouncedAutoSave(newShapes, state.lines)
+      debouncedAutoSave()
       return { shapes: newShapes }
     })
   },
@@ -428,9 +446,37 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       const newLines = state.lines.map(l =>
         l.id === id ? { ...l, color } : l
       )
-      debouncedAutoSave(state.shapes, newLines)
-      return { lines: newLines }
+      const newFreeLines = state.freeLines.map(f => (f.id === id ? { ...f, color } : f))
+      debouncedAutoSave()
+      return { lines: newLines, freeLines: newFreeLines }
     })
+  },
+
+  // Free line actions
+  addFreeLine: (x1, y1, x2, y2) => {
+    pushHistory(get, set)
+    const freeLine: FreeLine = { id: generateId(), x1, y1, x2, y2, color: get().defaultPalette.line.color }
+    set((state) => ({
+      freeLines: [...state.freeLines, freeLine],
+      shapes: state.shapes.map(s => ({ ...s, selected: false })),
+      activeTool: 'select',
+      selection: { type: 'freeLine', id: freeLine.id },
+    }))
+    debouncedAutoSave()
+  },
+
+  selectFreeLine: (id) => {
+    set((state) => ({
+      shapes: state.shapes.map(s => ({ ...s, selected: false })),
+      selection: id ? { type: 'freeLine', id } : null,
+    }))
+  },
+
+  setFreeLinePoints: (id, x1, y1, x2, y2) => {
+    set((state) => ({
+      freeLines: state.freeLines.map(f => (f.id === id ? { ...f, x1, y1, x2, y2 } : f)),
+    }))
+    debouncedAutoSave()
   },
 
   // Line actions
@@ -452,7 +498,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     }
     set((state) => {
       const newLines = [...state.lines, line]
-      debouncedAutoSave(state.shapes, newLines)
+      debouncedAutoSave()
       return {
         lines: newLines,
         activeTool: 'select',
@@ -466,7 +512,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     pushHistory(get, set)
     set((state) => {
       const newLines = state.lines.map(l => l.id === id ? { ...l, label } : l)
-      debouncedAutoSave(state.shapes, newLines)
+      debouncedAutoSave()
       return { lines: newLines }
     })
   },
@@ -532,7 +578,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     pushHistory(get, set)
     set((state) => {
       const newShapes = state.shapes.map(s => ({ ...s, ...snapShapePosition(s) }))
-      debouncedAutoSave(newShapes, state.lines)
+      debouncedAutoSave()
       return { shapes: newShapes, snapToGrid: true }
     })
   },
@@ -591,7 +637,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
           return placed
         })
 
-        debouncedAutoSave(newShapes, current.lines)
+        debouncedAutoSave()
         return { shapes: newShapes, layoutRunning: false }
       })
     }).catch(() => {
@@ -657,44 +703,56 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
 
   // Undo / Redo
   undo: () => {
-    const { historyIndex, history } = get()
+    const { historyIndex, shapes, lines, freeLines } = get()
+    let { history } = get()
     if (historyIndex <= 0) return
+    if (historyIndex === history.length - 1) {
+      // Record the present so redo can come back to it
+      history = [...history, {
+        shapes: shapes.map(s => ({ ...s })),
+        lines: lines.map(l => ({ ...l })),
+        freeLines: freeLines.map(f => ({ ...f })),
+      }]
+    }
+    const entry = history[historyIndex]
     const newIndex = historyIndex - 1
-    const entry = history[newIndex]
     set({
+      history,
       shapes: entry.shapes.map(s => ({ ...s })),
       lines: entry.lines.map(l => ({ ...l })),
+      freeLines: entry.freeLines.map(f => ({ ...f })),
       historyIndex: newIndex,
       selection: null,
       editing: null,
       editingLine: null,
     })
-    debouncedAutoSave(entry.shapes, entry.lines)
+    debouncedAutoSave()
   },
 
   redo: () => {
     const { historyIndex, history } = get()
-    if (historyIndex >= history.length - 1) return
+    if (historyIndex >= history.length - 2) return
     const newIndex = historyIndex + 1
-    const entry = history[newIndex]
+    const entry = history[newIndex + 1]
     set({
       shapes: entry.shapes.map(s => ({ ...s })),
       lines: entry.lines.map(l => ({ ...l })),
+      freeLines: entry.freeLines.map(f => ({ ...f })),
       historyIndex: newIndex,
       selection: null,
       editing: null,
       editingLine: null,
     })
-    debouncedAutoSave(entry.shapes, entry.lines)
+    debouncedAutoSave()
   },
 
   canUndo: () => get().historyIndex > 0,
-  canRedo: () => get().historyIndex < get().history.length - 1,
+  canRedo: () => get().historyIndex < get().history.length - 2,
 
   // Persistence
   saveDiagram: () => {
-    const { shapes, lines } = get()
-    return JSON.stringify({ shapes, lines }, null, 2)
+    const { shapes, lines, freeLines } = get()
+    return JSON.stringify({ shapes, lines, freeLines }, null, 2)
   },
 
   loadDiagram: (json) => {
@@ -717,11 +775,12 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
         set({
           shapes: migratedShapes,
           lines: data.lines || [],
+          freeLines: Array.isArray(data.freeLines) ? data.freeLines : [],
           selection: null,
           editing: null,
           editingLine: null,
         })
-        debouncedAutoSave(migratedShapes, data.lines || [])
+        debouncedAutoSave()
       }
     } catch {
       console.error('Failed to load diagram: invalid JSON')

@@ -239,11 +239,15 @@ function ShapeProperties() {
 function LineProperties() {
   const selection = useDiagramStore(s => s.selection)
   const lines = useDiagramStore(s => s.lines)
+  const freeLines = useDiagramStore(s => s.freeLines)
   const updateLineColor = useDiagramStore(s => s.updateLineColor)
   const setLineDefault = useDiagramStore(s => s.setLineDefault)
 
-  if (!selection || selection.type !== 'line') return null
-  const line = lines.find(l => l.id === selection.id)
+  // Connectors and free lines share the line colour controls and default
+  if (!selection || (selection.type !== 'line' && selection.type !== 'freeLine')) return null
+  const line = selection.type === 'line'
+    ? lines.find(l => l.id === selection.id)
+    : freeLines.find(f => f.id === selection.id)
   if (!line) return null
 
   return (

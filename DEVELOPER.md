@@ -61,6 +61,11 @@ Children are passed to ELK in breadth-first flow order from root shapes (no inco
 ### Connector Routing
 `routeLine()` in `routing.ts` is the single source of line geometry for canvas rendering, hit testing and all three exporters. A line is straight (edge-to-edge) when that segment clears every other shape; otherwise it is routed orthogonally with A* over a sparse grid built from padded shape bounds, with a bend penalty. Routes are computed from live geometry on every render rather than stored, so they stay valid after manual moves.
 
+### Free Lines
+`FreeLine` (`model.ts`) is a standalone segment `{ x1, y1, x2, y2, color }`, kept in its own `freeLines` array alongside `shapes` and `lines` (connectors). It is part of history snapshots, auto-save, save/load (older files without `freeLines` load as `[]`) and all three exporters (Excalidraw exports it as an unbound `line` element). Free lines are not routing obstacles. They share `updateLineColor()` and the line colour default with connectors, since ids are unique across both arrays.
+
+Canvas drags are measured from the gesture's `initial` pointer position, not the first `onDrag` event, which only fires once the drag threshold has been crossed.
+
 ### Grid Snap and Angle Lock
 Snapping works on shape **centres** (`snapShapePosition()` in `model.ts`) because `autoResizeShape()` keeps the centre fixed. Dragging derives position from the drag-start origin every frame (not accumulated deltas), so snapping never drifts. With Shift held or `angleLock` on, `lockToAngles()` constrains the centre to 45° rays from connected shapes' centres (or the drag start if unconnected), preferring ray intersections that satisfy two neighbours. Angle lock takes priority over grid snap, but quantises distance along the ray to the grid step.
 
@@ -87,4 +92,4 @@ The ELK.js chunk is ~1.4MB (450KB gzipped). It's loaded lazily on first layout t
 - No morphing -- shape type is fixed after creation
 - Old shape types (`square`, `circle`, `oval`) are migrated to `rectangle`/`ellipse` on file load
 - Shape IDs use format `el_{counter}_{timestamp_base36}`
-- History is capped at 50 entries; undo/redo operates on full shape+line snapshots
+- History is capped at 50 entries; undo/redo operates on full shapes + lines + freeLines snapshots. `pushHistory()` records the pre-action state; `history[historyIndex]` is what undo restores next, and the present state is appended on the first undo so redo can return to it

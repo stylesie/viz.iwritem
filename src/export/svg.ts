@@ -1,17 +1,23 @@
-import type { Shape, Line } from '../core/model'
+import type { Shape, Line, FreeLine } from '../core/model'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../core/autoResize'
 import { getPolygonVertices } from '../utils/geometry'
 import { routeLine, polylineMidpoint } from '../core/routing'
 
 const EXPORT_PADDING = 40
 
-function getBounds(shapes: Shape[]): { minX: number; minY: number; maxX: number; maxY: number } {
+function getBounds(shapes: Shape[], freeLines: FreeLine[]): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const s of shapes) {
     minX = Math.min(minX, s.x)
     minY = Math.min(minY, s.y)
     maxX = Math.max(maxX, s.x + s.width)
     maxY = Math.max(maxY, s.y + s.height)
+  }
+  for (const f of freeLines) {
+    minX = Math.min(minX, f.x1, f.x2)
+    minY = Math.min(minY, f.y1, f.y2)
+    maxX = Math.max(maxX, f.x1, f.x2)
+    maxY = Math.max(maxY, f.y1, f.y2)
   }
   return { minX, minY, maxX, maxY }
 }
@@ -160,22 +166,26 @@ function lineToSvg(line: Line, shapes: Shape[], ox: number, oy: number): string 
   return parts.join('\n  ')
 }
 
-export function exportToSvg(shapes: Shape[], lines: Line[]): string {
-  if (shapes.length === 0) return ''
+export function exportToSvg(shapes: Shape[], lines: Line[], freeLines: FreeLine[] = []): string {
+  if (shapes.length === 0 && freeLines.length === 0) return ''
 
-  const bounds = getBounds(shapes)
+  const bounds = getBounds(shapes, freeLines)
   const w = bounds.maxX - bounds.minX + EXPORT_PADDING * 2
   const h = bounds.maxY - bounds.minY + EXPORT_PADDING * 2
   const ox = bounds.minX - EXPORT_PADDING
   const oy = bounds.minY - EXPORT_PADDING
 
   const linesSvg = lines.map(l => lineToSvg(l, shapes, ox, oy)).filter(Boolean).join('\n  ')
+  const freeLinesSvg = freeLines.map(f =>
+    `<line x1="${f.x1 - ox}" y1="${f.y1 - oy}" x2="${f.x2 - ox}" y2="${f.y2 - oy}" stroke="${f.color}" stroke-width="2" stroke-linecap="round"/>`,
+  ).join('\n  ')
   const shapesSvg = shapes.map(s => shapeToSvg(s, ox, oy)).join('\n  ')
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
   <rect width="100%" height="100%" fill="white"/>
   ${linesSvg}
+  ${freeLinesSvg}
   ${shapesSvg}
 </svg>`
 }

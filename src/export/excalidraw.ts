@@ -1,4 +1,4 @@
-import type { Shape, Line } from '../core/model'
+import type { Shape, Line, FreeLine } from '../core/model'
 import { routeLine, polylineMidpoint } from '../core/routing'
 
 // Excalidraw element base
@@ -128,7 +128,7 @@ function buildFullText(shape: Shape): string {
   return parts.join('')
 }
 
-export function exportToExcalidraw(shapes: Shape[], lines: Line[]): string {
+export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: FreeLine[] = []): string {
   seed = 1
   const elements: (ExBase | ExText | ExArrow)[] = []
 
@@ -279,6 +279,34 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[]): string {
       }
       elements.push(labelEl)
     }
+  }
+
+  // Free lines become plain, unbound Excalidraw line elements
+  for (const f of freeLines) {
+    const dx = f.x2 - f.x1
+    const dy = f.y2 - f.y1
+    const lineEl: ExArrow = {
+      ...baseElement({
+        id: makeId(),
+        type: 'line',
+        x: f.x1,
+        y: f.y1,
+        width: Math.abs(dx),
+        height: Math.abs(dy),
+        strokeColor: f.color,
+        backgroundColor: 'transparent',
+      }),
+      type: 'line',
+      points: [[0, 0], [dx, dy]],
+      lastCommittedPoint: null,
+      startBinding: null,
+      endBinding: null,
+      startArrowhead: null,
+      endArrowhead: null,
+      roundness: null,
+      elbowed: false,
+    }
+    elements.push(lineEl)
   }
 
   const doc = {

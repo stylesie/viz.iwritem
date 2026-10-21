@@ -33,9 +33,20 @@ export interface Line {
   directed: boolean
 }
 
+/** Free-standing line (not attached to shapes), e.g. dividers and underlines */
+export interface FreeLine {
+  id: string
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  color: string
+}
+
 export interface Diagram {
   shapes: Shape[]
   lines: Line[]
+  freeLines: FreeLine[]
 }
 
 let nextId = 1
