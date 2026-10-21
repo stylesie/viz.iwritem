@@ -3,7 +3,8 @@ import { useGesture } from '@use-gesture/react'
 import rough from 'roughjs'
 import { useDiagramStore } from '../../store/diagramStore'
 import type { Theme } from '../../store/diagramStore'
-import { hitTestShape, getShapeCenter, getShapeEdgePoint, pointToSegmentDist, getPolygonVertices } from '../../utils/geometry'
+import { hitTestShape, getShapeEdgePoint, pointToSegmentDist, getPolygonVertices } from '../../utils/geometry'
+import { routeLine, polylineMidpoint } from '../../core/routing'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../../core/autoResize'
 import type { Shape, Line } from '../../core/model'
 import type { TextZoneLayout } from '../../core/autoResize'
@@ -242,14 +243,10 @@ function drawLine(
   selected: boolean,
   tc: ThemeColors,
 ) {
-  const fromShape = shapes.find(s => s.id === line.fromId)
-  const toShape = shapes.find(s => s.id === line.toId)
-  if (!fromShape || !toShape) return
-
-  const fromCenter = getShapeCenter(fromShape)
-  const toCenter = getShapeCenter(toShape)
-  const fromPt = getShapeEdgePoint(fromShape, toCenter)
-  const toPt = getShapeEdgePoint(toShape, fromCenter)
+  const pts = routeLine(line, shapes)
+  if (!pts) return
+  const prevPt = pts[pts.length - 2]
+  const toPt = pts[pts.length - 1]
 
   ctx.save()
   ctx.strokeStyle = selected ? tc.selection : line.color
@@ -258,19 +255,18 @@ function drawLine(
 
   // Draw line
   ctx.beginPath()
-  ctx.moveTo(fromPt.x, fromPt.y)
-  ctx.lineTo(toPt.x, toPt.y)
+  ctx.moveTo(pts[0].x, pts[0].y)
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
   ctx.stroke()
 
   // Draw arrowhead if directed
   if (line.directed) {
-    drawArrowhead(ctx, fromPt.x, fromPt.y, toPt.x, toPt.y, selected ? tc.selection : line.color)
+    drawArrowhead(ctx, prevPt.x, prevPt.y, toPt.x, toPt.y, selected ? tc.selection : line.color)
   }
 
   // Draw label
   if (line.label) {
-    const midX = (fromPt.x + toPt.x) / 2
-    const midY = (fromPt.y + toPt.y) / 2
+    const { x: midX, y: midY } = polylineMidpoint(pts)
 
     ctx.font = '12px Inter, system-ui, sans-serif'
     ctx.textAlign = 'center'
@@ -358,16 +354,13 @@ function findHitShape(shapes: Shape[], canvasX: number, canvasY: number): Shape 
 function findHitLine(lines: Line[], shapes: Shape[], canvasX: number, canvasY: number): Line | null {
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i]
-    const fromShape = shapes.find(s => s.id === line.fromId)
-    const toShape = shapes.find(s => s.id === line.toId)
-    if (!fromShape || !toShape) continue
+    const pts = routeLine(line, shapes)
+    if (!pts) continue
 
-    const fromCenter = getShapeCenter(fromShape)
-    const toCenter = getShapeCenter(toShape)
-    const fromPt = getShapeEdgePoint(fromShape, toCenter)
-    const toPt = getShapeEdgePoint(toShape, fromCenter)
-
-    const dist = pointToSegmentDist(canvasX, canvasY, fromPt.x, fromPt.y, toPt.x, toPt.y)
+    let dist = Infinity
+    for (let j = 1; j < pts.length; j++) {
+      dist = Math.min(dist, pointToSegmentDist(canvasX, canvasY, pts[j - 1].x, pts[j - 1].y, pts[j].x, pts[j].y))
+    }
     if (dist < LINE_HIT_TOLERANCE) return line
   }
   return null

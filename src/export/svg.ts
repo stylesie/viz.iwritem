@@ -1,6 +1,7 @@
 import type { Shape, Line } from '../core/model'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../core/autoResize'
-import { getShapeCenter, getShapeEdgePoint, getPolygonVertices } from '../utils/geometry'
+import { getPolygonVertices } from '../utils/geometry'
+import { routeLine, polylineMidpoint } from '../core/routing'
 
 const EXPORT_PADDING = 40
 
@@ -137,17 +138,9 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
 }
 
 function lineToSvg(line: Line, shapes: Shape[], ox: number, oy: number): string {
-  const fromShape = shapes.find(s => s.id === line.fromId)
-  const toShape = shapes.find(s => s.id === line.toId)
-  if (!fromShape || !toShape) return ''
-
-  const fromCenter = getShapeCenter(fromShape)
-  const toCenter = getShapeCenter(toShape)
-  const fromPt = getShapeEdgePoint(fromShape, toCenter)
-  const toPt = getShapeEdgePoint(toShape, fromCenter)
-
-  const x1 = fromPt.x - ox, y1 = fromPt.y - oy
-  const x2 = toPt.x - ox, y2 = toPt.y - oy
+  const route = routeLine(line, shapes)
+  if (!route) return ''
+  const pts = route.map(p => ({ x: p.x - ox, y: p.y - oy }))
 
   const parts: string[] = []
   const markerId = `arrow-${line.id.replace(/[^a-zA-Z0-9]/g, '')}`
@@ -156,11 +149,10 @@ function lineToSvg(line: Line, shapes: Shape[], ox: number, oy: number): string 
     parts.push(`<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${line.color}"/></marker></defs>`)
   }
 
-  parts.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${line.color}" stroke-width="1.5"${line.directed ? ` marker-end="url(#${markerId})"` : ''}/>`)
+  parts.push(`<polyline points="${pts.map(p => `${p.x},${p.y}`).join(' ')}" fill="none" stroke="${line.color}" stroke-width="1.5" stroke-linejoin="round"${line.directed ? ` marker-end="url(#${markerId})"` : ''}/>`)
 
   if (line.label) {
-    const mx = (x1 + x2) / 2
-    const my = (y1 + y2) / 2
+    const { x: mx, y: my } = polylineMidpoint(pts)
     parts.push(`<rect x="${mx - 25}" y="${my - 14}" width="50" height="18" fill="white" rx="2"/>`)
     parts.push(`<text x="${mx}" y="${my}" font-size="12" text-anchor="middle" fill="${line.color}">${escapeXml(line.label)}</text>`)
   }

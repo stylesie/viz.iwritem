@@ -1,5 +1,5 @@
 import type { Shape, Line } from '../core/model'
-import { getShapeCenter, getShapeEdgePoint } from '../utils/geometry'
+import { routeLine, polylineMidpoint } from '../core/routing'
 
 // Excalidraw element base
 interface ExBase {
@@ -195,14 +195,9 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[]): string {
     const toExId = shapeIdMap.get(line.toId)
     if (!fromExId || !toExId) continue
 
-    const fromShape = shapes.find(s => s.id === line.fromId)
-    const toShape = shapes.find(s => s.id === line.toId)
-    if (!fromShape || !toShape) continue
-
-    const fromCenter = getShapeCenter(fromShape)
-    const toCenter = getShapeCenter(toShape)
-    const fromPt = getShapeEdgePoint(fromShape, toCenter)
-    const toPt = getShapeEdgePoint(toShape, fromCenter)
+    const pts = routeLine(line, shapes)
+    if (!pts) continue
+    const fromPt = pts[0]
 
     const arrowId = makeId()
 
@@ -218,8 +213,9 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[]): string {
       toEl.boundElements.push({ id: arrowId, type: 'arrow' })
     }
 
-    const dx = toPt.x - fromPt.x
-    const dy = toPt.y - fromPt.y
+    const relPts = pts.map((p): [number, number] => [p.x - fromPt.x, p.y - fromPt.y])
+    const xsRel = relPts.map(p => p[0])
+    const ysRel = relPts.map(p => p[1])
 
     const arrowEl: ExArrow = {
       ...baseElement({
@@ -227,13 +223,13 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[]): string {
         type: 'arrow',
         x: fromPt.x,
         y: fromPt.y,
-        width: Math.abs(dx),
-        height: Math.abs(dy),
+        width: Math.max(...xsRel) - Math.min(...xsRel),
+        height: Math.max(...ysRel) - Math.min(...ysRel),
         strokeColor: line.color,
         backgroundColor: 'transparent',
       }),
       type: 'arrow',
-      points: [[0, 0], [dx, dy]],
+      points: relPts,
       lastCommittedPoint: null,
       startBinding: {
         elementId: fromExId,
@@ -256,8 +252,7 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[]): string {
 
     // Label as separate text near midpoint
     if (line.label) {
-      const midX = fromPt.x + dx / 2
-      const midY = fromPt.y + dy / 2
+      const { x: midX, y: midY } = polylineMidpoint(pts)
       const labelId = makeId()
       const labelEl: ExText = {
         ...baseElement({

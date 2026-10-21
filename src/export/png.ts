@@ -1,7 +1,8 @@
 import type { Shape, Line } from '../core/model'
 import rough from 'roughjs'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../core/autoResize'
-import { getShapeCenter, getShapeEdgePoint, getPolygonVertices } from '../utils/geometry'
+import { getPolygonVertices } from '../utils/geometry'
+import { routeLine, polylineMidpoint } from '../core/routing'
 import type { TextZoneLayout } from '../core/autoResize'
 
 const EXPORT_PADDING = 40
@@ -179,25 +180,22 @@ function drawShapeToCtx(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderin
 }
 
 function drawLineToCtx(ctx: CanvasRenderingContext2D, line: Line, shapes: Shape[]) {
-  const fromShape = shapes.find(s => s.id === line.fromId)
-  const toShape = shapes.find(s => s.id === line.toId)
-  if (!fromShape || !toShape) return
-
-  const fromCenter = getShapeCenter(fromShape)
-  const toCenter = getShapeCenter(toShape)
-  const fromPt = getShapeEdgePoint(fromShape, toCenter)
-  const toPt = getShapeEdgePoint(toShape, fromCenter)
+  const pts = routeLine(line, shapes)
+  if (!pts) return
+  const prevPt = pts[pts.length - 2]
+  const toPt = pts[pts.length - 1]
 
   ctx.save()
   ctx.strokeStyle = line.color
   ctx.lineWidth = 1.5
+  ctx.lineJoin = 'round'
   ctx.beginPath()
-  ctx.moveTo(fromPt.x, fromPt.y)
-  ctx.lineTo(toPt.x, toPt.y)
+  ctx.moveTo(pts[0].x, pts[0].y)
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
   ctx.stroke()
 
   if (line.directed) {
-    const angle = Math.atan2(toPt.y - fromPt.y, toPt.x - fromPt.x)
+    const angle = Math.atan2(toPt.y - prevPt.y, toPt.x - prevPt.x)
     const headLen = 12
     ctx.fillStyle = line.color
     ctx.beginPath()
@@ -209,8 +207,7 @@ function drawLineToCtx(ctx: CanvasRenderingContext2D, line: Line, shapes: Shape[
   }
 
   if (line.label) {
-    const midX = (fromPt.x + toPt.x) / 2
-    const midY = (fromPt.y + toPt.y) / 2
+    const { x: midX, y: midY } = polylineMidpoint(pts)
     ctx.font = '12px Inter, system-ui, sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'bottom'
