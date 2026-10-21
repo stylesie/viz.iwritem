@@ -16,6 +16,8 @@ src/
     model.ts          Shape/Line/Diagram types, createShape factory
     autoResize.ts     Text measurement and auto-resize logic
     layout.ts         ELK.js layout runner
+    routing.ts        Connector routing (straight, or orthogonal around shapes)
+    angleLock.ts      45° drag constraint maths
   store/
     diagramStore.ts   Zustand store -- all state and actions
   components/
@@ -53,6 +55,14 @@ The cylinder shape is composed of separate Rough.js primitives (ellipse, lines, 
 The layout result is offset so the center of mass of connected shapes stays constant -- this prevents the diagram from jumping to the origin.
 
 When `layoutLocked` is true, `triggerLayout()` is a no-op. `forceLayout()` bypasses the lock and always runs (used by the Arrange button). Force layout pushes history first so it's undoable.
+
+Children are passed to ELK in breadth-first flow order from root shapes (no incoming lines), with `MODEL_ORDER` cycle breaking, so loops become back-edges rather than reordering the flow.
+
+### Connector Routing
+`routeLine()` in `routing.ts` is the single source of line geometry for canvas rendering, hit testing and all three exporters. A line is straight (edge-to-edge) when that segment clears every other shape; otherwise it is routed orthogonally with A* over a sparse grid built from padded shape bounds, with a bend penalty. Routes are computed from live geometry on every render rather than stored, so they stay valid after manual moves.
+
+### Grid Snap and Angle Lock
+Snapping works on shape **centres** (`snapShapePosition()` in `model.ts`) because `autoResizeShape()` keeps the centre fixed. Dragging derives position from the drag-start origin every frame (not accumulated deltas), so snapping never drifts. With Shift held or `angleLock` on, `lockToAngles()` constrains the centre to 45° rays from connected shapes' centres (or the drag start if unconnected), preferring ray intersections that satisfy two neighbours. Angle lock takes priority over grid snap, but quantises distance along the ray to the grid step.
 
 ### Default Palette
 `DefaultPalette` stores per-shape-type color defaults and line color defaults. Stored in localStorage as JSON under `idrawm-defaults`. The `createShape()` factory accepts an optional colors override; the store passes palette defaults when calling it from `addShape()`.

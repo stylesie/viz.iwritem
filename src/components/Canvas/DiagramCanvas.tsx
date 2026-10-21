@@ -8,6 +8,8 @@ import { routeLine, polylineMidpoint } from '../../core/routing'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../../core/autoResize'
 import type { Shape, Line } from '../../core/model'
 import { GRID_SIZE, snapShapePosition } from '../../core/model'
+import { lockToAngles } from '../../core/angleLock'
+import type { Point } from '../../utils/geometry'
 import type { TextZoneLayout } from '../../core/autoResize'
 
 // ── Theme-aware colors ─────────────────────────────────────────
@@ -387,9 +389,9 @@ export default function DiagramCanvas() {
   const selectShape = useDiagramStore(s => s.selectShape)
   const selectLine = useDiagramStore(s => s.selectLine)
   const clearSelection = useDiagramStore(s => s.clearSelection)
-  const moveShape = useDiagramStore(s => s.moveShape)
   const setShapePosition = useDiagramStore(s => s.setShapePosition)
   const snapToGrid = useDiagramStore(s => s.snapToGrid)
+  const angleLock = useDiagramStore(s => s.angleLock)
   const setPan = useDiagramStore(s => s.setPan)
   const setZoom = useDiagramStore(s => s.setZoom)
   const screenToCanvas = useDiagramStore(s => s.screenToCanvas)
@@ -405,6 +407,8 @@ export default function DiagramCanvas() {
   const dragTargetRef = useRef<string | null>(null)
   // Shape position at drag start — snapped drags are computed from here, not accumulated
   const dragOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  // Centres a Shift-drag locks to: connected shapes, or the drag start if unconnected
+  const dragAnchorsRef = useRef<Point[]>([])
   const isPanningRef = useRef(false)
   const didDragRef = useRef(false)
 
@@ -575,6 +579,14 @@ export default function DiagramCanvas() {
             selectShape(hit.id)
             dragTargetRef.current = hit.id
             dragOriginRef.current = { x: hit.x, y: hit.y }
+            const neighbourIds = new Set(lines.flatMap(l =>
+              l.fromId === hit.id ? [l.toId] : l.toId === hit.id ? [l.fromId] : []))
+            neighbourIds.delete(hit.id)
+            const anchors = shapes.filter(s => neighbourIds.has(s.id))
+              .map(s => ({ x: s.x + s.width / 2, y: s.y + s.height / 2 }))
+            dragAnchorsRef.current = anchors.length > 0
+              ? anchors
+              : [{ x: hit.x + hit.width / 2, y: hit.y + hit.height / 2 }]
             isPanningRef.current = false
             pushMoveHistory()
           } else {
@@ -598,14 +610,23 @@ export default function DiagramCanvas() {
           return
         }
 
-        if (dragTargetRef.current && snapToGrid) {
+        if (dragTargetRef.current) {
           const shape = shapes.find(s => s.id === dragTargetRef.current)
           if (shape) {
-            const pos = snapShapePosition({ ...shape, x: dragOriginRef.current.x + mx / zoom, y: dragOriginRef.current.y + my / zoom })
+            // Positions are derived from the drag start each frame so snapping never accumulates drift
+            let pos = { x: dragOriginRef.current.x + mx / zoom, y: dragOriginRef.current.y + my / zoom }
+            if (angleLock || (event as PointerEvent).shiftKey) {
+              const c = lockToAngles(
+                { x: pos.x + shape.width / 2, y: pos.y + shape.height / 2 },
+                dragAnchorsRef.current,
+                snapToGrid ? GRID_SIZE : null,
+              )
+              pos = { x: c.x - shape.width / 2, y: c.y - shape.height / 2 }
+            } else if (snapToGrid) {
+              pos = snapShapePosition({ ...shape, ...pos })
+            }
             if (pos.x !== shape.x || pos.y !== shape.y) setShapePosition(shape.id, pos.x, pos.y)
           }
-        } else if (dragTargetRef.current) {
-          moveShape(dragTargetRef.current, dx / zoom, dy / zoom)
         } else if (isPanningRef.current) {
           setPan(panX + dx, panY + dy)
         }

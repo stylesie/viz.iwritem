@@ -73,6 +73,7 @@ interface DiagramState {
   layoutRunning: boolean
   layoutLocked: boolean
   snapToGrid: boolean
+  angleLock: boolean
   // Camera
   panX: number
   panY: number
@@ -125,6 +126,7 @@ interface DiagramState {
   // Layout
   toggleLayoutLock: () => void
   toggleSnapToGrid: () => void
+  toggleAngleLock: () => void
   forceLayout: () => void
   triggerLayout: () => void
 
@@ -221,6 +223,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   layoutRunning: false,
   layoutLocked: localStorage.getItem('idrawm-layout-locked') === 'true',
   snapToGrid: localStorage.getItem('idrawm-snap-grid') === 'true',
+  angleLock: localStorage.getItem('idrawm-angle-lock') === 'true',
   panX: 0,
   panY: 0,
   zoom: 1,
@@ -531,6 +534,15 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       const newShapes = state.shapes.map(s => ({ ...s, ...snapShapePosition(s) }))
       debouncedAutoSave(newShapes, state.lines)
       return { shapes: newShapes, snapToGrid: true }
+    })
+  },
+
+  /** Sticky equivalent of holding Shift while dragging — for touch devices */
+  toggleAngleLock: () => {
+    set((state) => {
+      const next = !state.angleLock
+      localStorage.setItem('idrawm-angle-lock', String(next))
+      return { angleLock: next }
     })
   },
 

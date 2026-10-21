@@ -172,6 +172,8 @@ export default function Toolbar() {
   const forceLayout = useDiagramStore(s => s.forceLayout)
   const snapToGrid = useDiagramStore(s => s.snapToGrid)
   const toggleSnapToGrid = useDiagramStore(s => s.toggleSnapToGrid)
+  const angleLock = useDiagramStore(s => s.angleLock)
+  const toggleAngleLock = useDiagramStore(s => s.toggleAngleLock)
   const lines = useDiagramStore(s => s.lines)
   const hasSelection = selection !== null
 
@@ -289,6 +291,14 @@ export default function Toolbar() {
         >
           <span className="tool-icon">#</span>
           <span className="tool-label">Grid</span>
+        </button>
+        <button
+          className={`tool-btn ${angleLock ? 'active' : ''}`}
+          onClick={toggleAngleLock}
+          title={angleLock ? 'Angle lock on: dragged shapes keep connectors at 45° steps (click to turn off)' : 'Angle lock off (hold Shift while dragging, or click to keep it on)'}
+        >
+          <span className="tool-icon">{'∠'}</span>
+          <span className="tool-label">Angle</span>
         </button>
       </div>
 

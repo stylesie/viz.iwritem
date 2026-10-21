@@ -23,6 +23,13 @@ Each shape has three text zones: **header**, **body**, and **footer**. Double-cl
 ### Connections
 Select the **Connect** tool (or press `L`), then drag from one shape to another to create a directed arrow. Double-click a line to add a label.
 
+Lines take a straight path when nothing is in the way, and bend around shapes otherwise.
+
+### Grid and Angle Lock
+**Grid** -- Turn on to snap shape centres to the 20px grid. Turning it on aligns every existing shape (undoable); new shapes, dragged shapes and Arrange results all land on grid points.
+
+**Angle** -- Hold `Shift` while dragging a shape to lock its connectors to 45° steps (0°, 45°, 90° ...). It lines up with two connected shapes at once where it can. A shape with no connectors is locked to straight or diagonal moves from where the drag started. On touch devices, the **Angle** toolbar button keeps the lock on without a keyboard. With Grid on, locked positions also stay on the grid.
+
 ### Auto-Layout
 Connected shapes are automatically arranged using ELK.js when you add or remove connections. The layout preserves the center of mass so shapes don't jump across the screen.
 
@@ -84,4 +91,6 @@ Toggle between light and dark mode with the theme button. Your preference persis
 | Theme | localStorage | `idrawm-theme` |
 | Default colors | localStorage | `idrawm-defaults` |
 | Layout lock | localStorage | `idrawm-layout-locked` |
+| Snap to grid | localStorage | `idrawm-snap-grid` |
+| Angle lock | localStorage | `idrawm-angle-lock` |
 | Diagram auto-save | IndexedDB | `idrawm` / `autosave` |
