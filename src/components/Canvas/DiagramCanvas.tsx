@@ -6,9 +6,10 @@ import type { Theme } from '../../store/diagramStore'
 import { hitTestShape, getShapeEdgePoint, pointToSegmentDist, getPolygonVertices } from '../../utils/geometry'
 import { routeLine, polylineMidpoint } from '../../core/routing'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../../core/autoResize'
-import type { Shape, Line, FreeLine } from '../../core/model'
+import type { Shape, Line, FreeLine, TextBox } from '../../core/model'
 import { GRID_SIZE, snapShapePosition, snapToGrid as snapValue } from '../../core/model'
 import { lockToAngles } from '../../core/angleLock'
+import { layoutTextBox, textBoxFont } from '../../core/textBox'
 import type { Point } from '../../utils/geometry'
 import type { TextZoneLayout } from '../../core/autoResize'
 
@@ -386,6 +387,30 @@ function constrainPoint(p: Point, anchor: Point, lock: boolean, grid: boolean): 
   return p
 }
 
+// ── Text boxes ───────────────────────────────────────────────
+
+// Gap between a text box and its selection outline; also widens its hit area
+const TEXT_SELECT_PAD = 4
+
+function drawTextBox(ctx: CanvasRenderingContext2D, t: TextBox, selected: boolean, tc: ThemeColors, zoom: number) {
+  const layout = layoutTextBox(t)
+  ctx.save()
+  ctx.font = textBoxFont(t)
+  ctx.textBaseline = 'middle'
+  // Only the box being edited can be empty; it shows the placeholder
+  ctx.fillStyle = t.text ? t.color : tc.placeholderText
+  layout.lines.forEach((line, i) => ctx.fillText(line, t.x, t.y + (i + 0.5) * layout.lineHeight))
+
+  if (selected) {
+    const pad = TEXT_SELECT_PAD / zoom
+    ctx.strokeStyle = tc.selection
+    ctx.lineWidth = 1 / zoom
+    ctx.setLineDash([4 / zoom, 3 / zoom])
+    ctx.strokeRect(t.x - pad, t.y - pad, layout.width + pad * 2, layout.height + pad * 2)
+  }
+  ctx.restore()
+}
+
 // ── Hit testing ──────────────────────────────────────────────
 
 const LINE_HIT_TOLERANCE = 8
@@ -422,6 +447,16 @@ function findHitFreeLine(freeLines: FreeLine[], canvasX: number, canvasY: number
   return null
 }
 
+function findHitText(texts: TextBox[], canvasX: number, canvasY: number): TextBox | null {
+  for (let i = texts.length - 1; i >= 0; i--) {
+    const t = texts[i]
+    const { width, height } = layoutTextBox(t)
+    if (canvasX >= t.x - TEXT_SELECT_PAD && canvasX <= t.x + width + TEXT_SELECT_PAD &&
+        canvasY >= t.y - TEXT_SELECT_PAD && canvasY <= t.y + height + TEXT_SELECT_PAD) return t
+  }
+  return null
+}
+
 // ── Canvas component ──────────────────────────────────────────
 
 export default function DiagramCanvas() {
@@ -433,6 +468,13 @@ export default function DiagramCanvas() {
   const addFreeLine = useDiagramStore(s => s.addFreeLine)
   const selectFreeLine = useDiagramStore(s => s.selectFreeLine)
   const setFreeLinePoints = useDiagramStore(s => s.setFreeLinePoints)
+  const texts = useDiagramStore(s => s.texts)
+  const editingText = useDiagramStore(s => s.editingText)
+  const addText = useDiagramStore(s => s.addText)
+  const selectText = useDiagramStore(s => s.selectText)
+  const setTextPosition = useDiagramStore(s => s.setTextPosition)
+  const startEditingText = useDiagramStore(s => s.startEditingText)
+  const stopEditingText = useDiagramStore(s => s.stopEditingText)
   const lines = useDiagramStore(s => s.lines)
   const activeTool = useDiagramStore(s => s.activeTool)
   const editing = useDiagramStore(s => s.editing)
@@ -481,6 +523,8 @@ export default function DiagramCanvas() {
   }
   // Free line being moved (whole line) or reshaped (one endpoint)
   const freeLineDragRef = useRef<{ id: string; mode: 'move' | 'p1' | 'p2'; orig: FreeLine } | null>(null)
+  // Text box being dragged, and its position at drag start
+  const textDragRef = useRef<{ id: string; origin: Point } | null>(null)
   // Swallows the click that follows drawing or dragging a free line
   const suppressClickRef = useRef(false)
   const didDragRef = useRef(false)
@@ -538,8 +582,13 @@ export default function DiagramCanvas() {
       drawShape(rc, ctx, shape, tc)
     }
 
+    // Text boxes are drawn on top so headers stay readable over shapes
+    for (const t of texts) {
+      drawTextBox(ctx, t, selection?.type === 'text' && selection.id === t.id, tc, zoom)
+    }
+
     ctx.restore()
-  }, [shapes, lines, freeLines, draft, panX, panY, zoom, selection, connecting, theme])
+  }, [shapes, lines, freeLines, texts, draft, panX, panY, zoom, selection, connecting, theme])
 
   useEffect(() => {
     const frameId = requestAnimationFrame(render)
@@ -573,6 +622,14 @@ export default function DiagramCanvas() {
     // Line tool draws by dragging; a tap does nothing
     if (activeTool === 'freeLine') return
 
+    // Text tool — edit the text box under the pointer, or start a new one there
+    if (activeTool === 'text') {
+      const hitText = findHitText(texts, cp.x, cp.y)
+      if (hitText) startEditingText(hitText.id)
+      else addText(cp.x, cp.y)
+      return
+    }
+
     if (activeTool !== 'select' && activeTool !== 'connect') {
       addShape(activeTool, cp.x, cp.y)
       return
@@ -587,7 +644,13 @@ export default function DiagramCanvas() {
       return
     }
 
-    // Select tool — check shapes first, then lines
+    // Select tool — text boxes (drawn on top) first, then shapes, then lines
+    const hitText = findHitText(texts, cp.x, cp.y)
+    if (hitText) {
+      selectText(hitText.id)
+      return
+    }
+
     const hitShape = findHitShape(shapes, cp.x, cp.y)
     if (hitShape) {
       selectShape(hitShape.id)
@@ -607,7 +670,7 @@ export default function DiagramCanvas() {
     }
 
     clearSelection()
-  }, [activeTool, shapes, lines, freeLines, editing, screenToCanvas, addShape, selectShape, selectLine, selectFreeLine, clearSelection, startConnecting])
+  }, [activeTool, shapes, lines, freeLines, texts, editing, screenToCanvas, addShape, addText, selectShape, selectLine, selectFreeLine, selectText, startEditingText, clearSelection, startConnecting])
 
   // ── Double-click to edit ──
 
@@ -618,6 +681,12 @@ export default function DiagramCanvas() {
     if (!canvasEl) return
     const rect = canvasEl.getBoundingClientRect()
     const cp = screenToCanvas(e.clientX - rect.left, e.clientY - rect.top)
+
+    const hitText = findHitText(texts, cp.x, cp.y)
+    if (hitText) {
+      startEditingText(hitText.id)
+      return
+    }
 
     const hitShape = findHitShape(shapes, cp.x, cp.y)
     if (hitShape) {
@@ -630,7 +699,7 @@ export default function DiagramCanvas() {
       startEditingLine(hitLine.id)
       return
     }
-  }, [shapes, lines, editing, screenToCanvas, startEditing, startEditingLine])
+  }, [shapes, lines, texts, editing, screenToCanvas, startEditing, startEditingLine, startEditingText])
 
   // ── Gesture handling ──
 
@@ -643,6 +712,8 @@ export default function DiagramCanvas() {
           stopEditing()
           return
         }
+        // Normally already closed by the editor losing focus
+        if (editingText) stopEditingText()
 
         const canvasEl = canvasRef.current
         if (!canvasEl) return
@@ -651,6 +722,7 @@ export default function DiagramCanvas() {
         if (first) {
           didDragRef.current = false
           freeLineDragRef.current = null
+          textDragRef.current = null
           drawStartRef.current = null
           const cp = screenToCanvas(ix - rect.left, iy - rect.top)
           pointerStartRef.current = cp
@@ -697,6 +769,16 @@ export default function DiagramCanvas() {
               pushMoveHistory()
               return
             }
+          }
+
+          const hitText = findHitText(texts, cp.x, cp.y)
+          if (hitText) {
+            selectText(hitText.id)
+            textDragRef.current = { id: hitText.id, origin: { x: hitText.x, y: hitText.y } }
+            dragTargetRef.current = null
+            isPanningRef.current = false
+            pushMoveHistory()
+            return
           }
 
           const hit = findHitShape(shapes, cp.x, cp.y)
@@ -751,6 +833,13 @@ export default function DiagramCanvas() {
           const anchor = drawStartRef.current
           const end = constrainPoint(cur, anchor, lock, snapToGrid)
           updateDraft({ x1: anchor.x, y1: anchor.y, x2: end.x, y2: end.y })
+          return
+        }
+
+        if (textDragRef.current) {
+          const { id, origin } = textDragRef.current
+          const pos = constrainPoint({ x: origin.x + moved.x, y: origin.y + moved.y }, origin, lock, snapToGrid)
+          setTextPosition(id, pos.x, pos.y)
           return
         }
 
@@ -816,6 +905,11 @@ export default function DiagramCanvas() {
           return
         }
 
+        if (textDragRef.current) {
+          textDragRef.current = null
+          return
+        }
+
         if (connecting) {
           const canvasEl = canvasRef.current
           if (!canvasEl) {
@@ -869,6 +963,7 @@ export default function DiagramCanvas() {
     if (connecting) return 'crosshair'
     if (activeTool === 'connect') return 'crosshair'
     if (activeTool === 'select') return 'default'
+    if (activeTool === 'text') return 'text'
     return 'crosshair'
   })()
 

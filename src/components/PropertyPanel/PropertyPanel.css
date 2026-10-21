@@ -201,3 +201,36 @@
     box-shadow: 0 -4px 24px var(--shadow);
   }
 }
+
+/* Text box size presets (plus the bold toggle) */
+.text-size-row {
+  display: flex;
+  gap: 3px;
+}
+
+.text-size-btn {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  font-size: 11px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  padding: 0;
+}
+
+.text-size-btn:hover {
+  background: var(--bg-hover);
+}
+
+.text-size-btn.bold {
+  font-weight: 700;
+}
+
+.text-size-btn.selected {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(9, 132, 227, 0.3);
+}

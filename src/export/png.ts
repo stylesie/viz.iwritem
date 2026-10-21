@@ -1,4 +1,5 @@
-import type { Shape, Line, FreeLine } from '../core/model'
+import type { Shape, Line, FreeLine, TextBox } from '../core/model'
+import { layoutTextBox, textBoxFont } from '../core/textBox'
 import rough from 'roughjs'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../core/autoResize'
 import { getPolygonVertices } from '../utils/geometry'
@@ -7,7 +8,7 @@ import type { TextZoneLayout } from '../core/autoResize'
 
 const EXPORT_PADDING = 40
 
-function getBounds(shapes: Shape[], freeLines: FreeLine[]): { minX: number; minY: number; maxX: number; maxY: number } {
+function getBounds(shapes: Shape[], freeLines: FreeLine[], texts: TextBox[]): { minX: number; minY: number; maxX: number; maxY: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const s of shapes) {
     minX = Math.min(minX, s.x)
@@ -20,6 +21,13 @@ function getBounds(shapes: Shape[], freeLines: FreeLine[]): { minX: number; minY
     minY = Math.min(minY, f.y1, f.y2)
     maxX = Math.max(maxX, f.x1, f.x2)
     maxY = Math.max(maxY, f.y1, f.y2)
+  }
+  for (const t of texts) {
+    const { width, height } = layoutTextBox(t)
+    minX = Math.min(minX, t.x)
+    minY = Math.min(minY, t.y)
+    maxX = Math.max(maxX, t.x + width)
+    maxY = Math.max(maxY, t.y + height)
   }
   return { minX, minY, maxX, maxY }
 }
@@ -227,14 +235,14 @@ function drawLineToCtx(ctx: CanvasRenderingContext2D, line: Line, shapes: Shape[
   ctx.restore()
 }
 
-export function exportToPng(shapes: Shape[], lines: Line[], freeLines: FreeLine[] = []): Promise<Blob> {
+export function exportToPng(shapes: Shape[], lines: Line[], freeLines: FreeLine[] = [], texts: TextBox[] = []): Promise<Blob> {
   return new Promise((resolve, reject) => {
-    if (shapes.length === 0 && freeLines.length === 0) {
+    if (shapes.length === 0 && freeLines.length === 0 && texts.length === 0) {
       reject(new Error('Nothing to export'))
       return
     }
 
-    const bounds = getBounds(shapes, freeLines)
+    const bounds = getBounds(shapes, freeLines, texts)
     const w = bounds.maxX - bounds.minX + EXPORT_PADDING * 2
     const h = bounds.maxY - bounds.minY + EXPORT_PADDING * 2
 
@@ -271,6 +279,16 @@ export function exportToPng(shapes: Shape[], lines: Line[], freeLines: FreeLine[
     const rc = rough.canvas(canvas)
     for (const shape of shapes) {
       drawShapeToCtx(rc, ctx, shape)
+    }
+
+    for (const t of texts) {
+      const { lines: textLines, lineHeight } = layoutTextBox(t)
+      ctx.save()
+      ctx.font = textBoxFont(t)
+      ctx.textBaseline = 'middle'
+      ctx.fillStyle = t.color
+      textLines.forEach((l, i) => ctx.fillText(l, t.x, t.y + (i + 0.5) * lineHeight))
+      ctx.restore()
     }
 
     canvas.toBlob(blob => {

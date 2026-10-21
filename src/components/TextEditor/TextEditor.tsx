@@ -2,6 +2,7 @@ import { useRef, useEffect, useState } from 'react'
 import { useDiagramStore } from '../../store/diagramStore'
 import type { TextZone } from '../../store/diagramStore'
 import { HEADER_FONT, BODY_FONT, FOOTER_FONT } from '../../core/autoResize'
+import { layoutTextBox } from '../../core/textBox'
 import './TextEditor.css'
 
 const ZONE_CONFIG: Record<TextZone, { label: string; font: string; placeholder: string }> = {
@@ -190,11 +191,70 @@ function LineTextEditor() {
   )
 }
 
+function TextBoxEditor() {
+  const editingText = useDiagramStore(s => s.editingText)
+  const texts = useDiagramStore(s => s.texts)
+  const panX = useDiagramStore(s => s.panX)
+  const panY = useDiagramStore(s => s.panY)
+  const zoom = useDiagramStore(s => s.zoom)
+  const updateTextContent = useDiagramStore(s => s.updateTextContent)
+  const stopEditingText = useDiagramStore(s => s.stopEditingText)
+
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+
+  const textBox = editingText ? texts.find(t => t.id === editingText.id) : null
+
+  useEffect(() => {
+    if (!editingText) return
+    requestAnimationFrame(() => {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    })
+  }, [editingText?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!editingText || !textBox) return null
+
+  // Sit just below the text so it stays visible while typing
+  const { height } = layoutTextBox(textBox)
+  const left = textBox.x * zoom + panX
+  const top = (textBox.y + height) * zoom + panY + 12
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Enter finishes; Shift+Enter adds a line
+    if (e.key === 'Escape' || (e.key === 'Enter' && !e.shiftKey)) {
+      e.preventDefault()
+      stopEditingText()
+    }
+    e.stopPropagation()
+  }
+
+  return (
+    <div
+      className="text-editor-panel"
+      style={{ left, top }}
+      onKeyDown={handleKeyDown}
+    >
+      <div className="text-editor-title">Edit Text</div>
+      <textarea
+        ref={inputRef}
+        className="text-editor-input"
+        value={textBox.text}
+        placeholder="Heading..."
+        rows={2}
+        onChange={e => updateTextContent(textBox.id, e.target.value)}
+        onBlur={stopEditingText}
+      />
+      <div className="text-editor-hint">Enter to finish, Shift+Enter for a new line</div>
+    </div>
+  )
+}
+
 export default function TextEditor() {
   return (
     <>
       <ShapeTextEditor />
       <LineTextEditor />
+      <TextBoxEditor />
     </>
   )
 }

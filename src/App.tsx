@@ -25,6 +25,7 @@ export default function App() {
   const setTool = useDiagramStore(s => s.setTool)
   const editing = useDiagramStore(s => s.editing)
   const editingLine = useDiagramStore(s => s.editingLine)
+  const editingText = useDiagramStore(s => s.editingText)
   const theme = useDiagramStore(s => s.theme)
   const undo = useDiagramStore(s => s.undo)
   const redo = useDiagramStore(s => s.redo)
@@ -39,7 +40,7 @@ export default function App() {
   // Restore auto-saved diagram on mount
   useEffect(() => {
     loadAutoSave().then(data => {
-      if (data && (data.shapes.length > 0 || (data.freeLines?.length ?? 0) > 0)) {
+      if (data && (data.shapes.length > 0 || (data.freeLines?.length ?? 0) > 0 || (data.texts?.length ?? 0) > 0)) {
         useDiagramStore.getState().loadDiagram(JSON.stringify(data))
       }
     })
@@ -66,7 +67,7 @@ export default function App() {
         return
       }
 
-      if (editing || editingLine) return
+      if (editing || editingLine || editingText) return
       if (isInput) return
 
       // Ctrl+A: select all (prevent default browser select)
@@ -93,7 +94,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [setTool, editing, editingLine, undo, redo, deleteSelected, selectAll])
+  }, [setTool, editing, editingLine, editingText, undo, redo, deleteSelected, selectAll])
 
   return (
     <div className="app">

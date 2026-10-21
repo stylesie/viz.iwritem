@@ -1,4 +1,5 @@
-import type { Shape, Line, FreeLine } from '../core/model'
+import type { Shape, Line, FreeLine, TextBox } from '../core/model'
+import { layoutTextBox, TEXT_LINE_HEIGHT } from '../core/textBox'
 import { routeLine, polylineMidpoint } from '../core/routing'
 
 // Excalidraw element base
@@ -128,7 +129,7 @@ function buildFullText(shape: Shape): string {
   return parts.join('')
 }
 
-export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: FreeLine[] = []): string {
+export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: FreeLine[] = [], texts: TextBox[] = []): string {
   seed = 1
   const elements: (ExBase | ExText | ExArrow)[] = []
 
@@ -307,6 +308,35 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: Fr
       elbowed: false,
     }
     elements.push(lineEl)
+  }
+
+  // Text boxes become standalone text elements (Excalidraw has no bold, so weight is dropped)
+  for (const t of texts) {
+    const { width, height, fontSize } = layoutTextBox(t)
+    const textEl: ExText = {
+      ...baseElement({
+        id: makeId(),
+        type: 'text',
+        x: t.x,
+        y: t.y,
+        width,
+        height,
+        strokeColor: t.color,
+        backgroundColor: 'transparent',
+      }),
+      type: 'text',
+      text: t.text,
+      fontSize,
+      fontFamily: 2,
+      textAlign: 'left',
+      verticalAlign: 'top',
+      containerId: null,
+      originalText: t.text,
+      autoResize: true,
+      lineHeight: TEXT_LINE_HEIGHT,
+      roundness: null,
+    }
+    elements.push(textEl)
   }
 
   const doc = {

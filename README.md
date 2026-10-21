@@ -30,6 +30,11 @@ Select the **Line** tool and drag to draw a free-standing line (for dividers, un
 
 Click a line to select it, drag its middle to move it, or drag the round handle at either end to reshape it. The same Shift/Angle and Grid rules apply.
 
+### Text
+Select the **Text** tool and click where the text should start, for page headings and titles. Type in the box that opens: **Enter** finishes and **Shift+Enter** starts a new line. A text box left empty is removed.
+
+Text sizes are relative to normal text: **S** (1×), **M** (1.5×), **L** (2×, the default), **XL** (3×) and **XXL** (4×). Pick a size, bold on/off and a colour in the panel on the right. **Set as Default** applies them to new text. Double-click a text box (or click it with the Text tool) to edit it. Drag it to move it; Grid and Angle work as they do for lines.
+
 ### Grid and Angle Lock
 **Grid** -- Turn on to snap shape centres to the 20px grid. Turning it on aligns every existing shape (undoable); new shapes, dragged shapes and Arrange results all land on grid points.
 

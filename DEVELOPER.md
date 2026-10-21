@@ -66,6 +66,11 @@ Children are passed to ELK in breadth-first flow order from root shapes (no inco
 
 Canvas drags are measured from the gesture's `initial` pointer position, not the first `onDrag` event, which only fires once the drag threshold has been crossed.
 
+### Text Boxes
+`TextBox` (`model.ts`) is standalone text `{ x, y, text, scale, bold, color }`, kept in a `texts` array. `(x, y)` is the top-left corner. The font size is `scale × TEXT_BASE_SIZE` (16px), so sizes are relative presets (`TEXT_SIZES` in `core/textBox.ts`). `layoutTextBox()` measures a box (lines split on `\n`, no wrapping), and the canvas, hit testing, editor placement and all three exporters use it. Text boxes are drawn above shapes and are hit-tested before them.
+
+Editing pushes history once per session (`addText` / `startEditingText`), not per keystroke. `stopEditingText()` removes a box left empty, and gives back that history entry if the edit changed nothing. Text defaults are stored in `DefaultPalette.text` (optional, so older saved palettes still load).
+
 ### Grid Snap and Angle Lock
 Snapping works on shape **centres** (`snapShapePosition()` in `model.ts`) because `autoResizeShape()` keeps the centre fixed. Dragging derives position from the drag-start origin every frame (not accumulated deltas), so snapping never drifts. With Shift held or `angleLock` on, `lockToAngles()` constrains the centre to 45° rays from connected shapes' centres (or the drag start if unconnected), preferring ray intersections that satisfy two neighbours. Angle lock takes priority over grid snap, but quantises distance along the ray to the grid step.
 
@@ -92,4 +97,4 @@ The ELK.js chunk is ~1.4MB (450KB gzipped). It's loaded lazily on first layout t
 - No morphing -- shape type is fixed after creation
 - Old shape types (`square`, `circle`, `oval`) are migrated to `rectangle`/`ellipse` on file load
 - Shape IDs use format `el_{counter}_{timestamp_base36}`
-- History is capped at 50 entries; undo/redo operates on full shapes + lines + freeLines snapshots. `pushHistory()` records the pre-action state; `history[historyIndex]` is what undo restores next, and the present state is appended on the first undo so redo can return to it
+- History is capped at 50 entries; undo/redo operates on full shapes + lines + freeLines + texts snapshots. `pushHistory()` records the pre-action state; `history[historyIndex]` is what undo restores next, and the present state is appended on the first undo so redo can return to it

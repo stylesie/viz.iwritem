@@ -43,6 +43,7 @@ function ExportMenu() {
   const shapes = useDiagramStore(s => s.shapes)
   const lines = useDiagramStore(s => s.lines)
   const freeLines = useDiagramStore(s => s.freeLines)
+  const texts = useDiagramStore(s => s.texts)
 
   useEffect(() => {
     if (!open) return
@@ -55,17 +56,17 @@ function ExportMenu() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [open])
 
-  const hasContent = shapes.length > 0 || freeLines.length > 0
+  const hasContent = shapes.length > 0 || freeLines.length > 0 || texts.length > 0
 
   const handleExcalidraw = () => {
-    const json = exportToExcalidraw(shapes, lines, freeLines)
+    const json = exportToExcalidraw(shapes, lines, freeLines, texts)
     downloadText(json, 'diagram.excalidraw', 'application/json')
     setOpen(false)
   }
 
   const handlePng = async () => {
     try {
-      const blob = await exportToPng(shapes, lines, freeLines)
+      const blob = await exportToPng(shapes, lines, freeLines, texts)
       downloadBlob(blob, 'diagram.png')
     } catch (err) {
       console.error('PNG export failed:', err)
@@ -74,7 +75,7 @@ function ExportMenu() {
   }
 
   const handleSvg = () => {
-    const svg = exportToSvg(shapes, lines, freeLines)
+    const svg = exportToSvg(shapes, lines, freeLines, texts)
     downloadText(svg, 'diagram.svg', 'image/svg+xml')
     setOpen(false)
   }
@@ -253,6 +254,14 @@ export default function Toolbar() {
         >
           <span className="tool-icon">{'\u2215'}</span>
           <span className="tool-label">Line</span>
+        </button>
+        <button
+          className={`tool-btn ${activeTool === 'text' ? 'active' : ''}`}
+          onClick={() => handleToolClick('text')}
+          title="Text: click to add a heading"
+        >
+          <span className="tool-icon" style={{ fontWeight: 700 }}>T</span>
+          <span className="tool-label">Text</span>
         </button>
       </div>
 

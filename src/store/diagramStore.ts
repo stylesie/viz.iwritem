@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Shape, ShapeType, Line, FreeLine, IconAlign } from '../core/model'
+import type { Shape, ShapeType, Line, FreeLine, TextBox, IconAlign } from '../core/model'
 import { createShape, generateId, snapToGrid, snapShapePosition } from '../core/model'
 import { autoResizeShape } from '../core/autoResize'
 import { runLayout } from '../core/layout'
@@ -12,10 +12,15 @@ export interface ShapeColorDefaults {
   textColor: string
 }
 
+export type TextDefaults = Pick<TextBox, 'color' | 'scale' | 'bold'>
+
 export interface DefaultPalette {
   shapes: Partial<Record<ShapeType, ShapeColorDefaults>>
   line: { color: string }
+  text?: TextDefaults
 }
+
+const DEFAULT_TEXT: TextDefaults = { color: '#2d3436', scale: 2, bold: true }
 
 const DEFAULTS_KEY = 'idrawm-defaults'
 
@@ -31,7 +36,7 @@ function saveDefaultPalette(palette: DefaultPalette) {
   localStorage.setItem(DEFAULTS_KEY, JSON.stringify(palette))
 }
 
-export type Tool = 'select' | 'connect' | 'freeLine' | ShapeType
+export type Tool = 'select' | 'connect' | 'freeLine' | 'text' | ShapeType
 
 export type TextZone = 'header' | 'body' | 'footer'
 
@@ -44,6 +49,14 @@ interface EditingLineState {
   lineId: string
 }
 
+interface EditingTextState {
+  id: string
+  // Text before editing, or null for a box created by this edit
+  original: string | null
+  // historyIndex right after this edit pushed its history entry
+  historyIndex: number
+}
+
 /** In-progress connection drag */
 interface ConnectingState {
   fromId: string
@@ -53,12 +66,13 @@ interface ConnectingState {
 
 export type Theme = 'light' | 'dark'
 
-type SelectionKind = { type: 'shape'; id: string } | { type: 'line'; id: string } | { type: 'freeLine'; id: string } | null
+type SelectionKind = { type: 'shape'; id: string } | { type: 'line'; id: string } | { type: 'freeLine'; id: string } | { type: 'text'; id: string } | null
 
 interface HistoryEntry {
   shapes: Shape[]
   lines: Line[]
   freeLines: FreeLine[]
+  texts: TextBox[]
 }
 
 const MAX_HISTORY = 50
@@ -67,9 +81,11 @@ interface DiagramState {
   shapes: Shape[]
   lines: Line[]
   freeLines: FreeLine[]
+  texts: TextBox[]
   activeTool: Tool
   editing: EditingState | null
   editingLine: EditingLineState | null
+  editingText: EditingTextState | null
   connecting: ConnectingState | null
   selection: SelectionKind
   layoutRunning: boolean
@@ -118,6 +134,16 @@ interface DiagramState {
   selectFreeLine: (id: string | null) => void
   setFreeLinePoints: (id: string, x1: number, y1: number, x2: number, y2: number) => void
 
+  // Text box actions
+  addText: (canvasX: number, canvasY: number) => void
+  selectText: (id: string | null) => void
+  setTextPosition: (id: string, x: number, y: number) => void
+  updateTextContent: (id: string, text: string) => void
+  updateTextStyle: (id: string, style: Partial<TextDefaults>) => void
+  setTextDefault: (style: Partial<TextDefaults>) => void
+  startEditingText: (id: string) => void
+  stopEditingText: () => void
+
   // Line actions
   addLine: (fromId: string, toId: string) => void
   updateLineLabel: (id: string, label: string) => void
@@ -158,11 +184,12 @@ interface DiagramState {
  * only recorded (as history[historyIndex + 1]) once undo is used, so redo can return to it.
  */
 function pushHistory(get: () => DiagramState, set: (fn: (s: DiagramState) => Partial<DiagramState>) => void) {
-  const { shapes, lines, freeLines, history, historyIndex } = get()
+  const { shapes, lines, freeLines, texts, history, historyIndex } = get()
   const entry: HistoryEntry = {
     shapes: shapes.map(s => ({ ...s })),
     lines: lines.map(l => ({ ...l })),
     freeLines: freeLines.map(f => ({ ...f })),
+    texts: texts.map(t => ({ ...t })),
   }
   // Discard any redo entries beyond current index
   const newHistory = [...history.slice(0, historyIndex + 1), entry]
@@ -188,11 +215,11 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 async function autoSave() {
-  const { shapes, lines, freeLines } = useDiagramStore.getState()
+  const { shapes, lines, freeLines, texts } = useDiagramStore.getState()
   try {
     const db = await openDb()
     const tx = db.transaction(DB_STORE, 'readwrite')
-    tx.objectStore(DB_STORE).put({ shapes, lines, freeLines }, AUTO_SAVE_KEY)
+    tx.objectStore(DB_STORE).put({ shapes, lines, freeLines, texts }, AUTO_SAVE_KEY)
     db.close()
   } catch {
     // Silently fail auto-save
@@ -206,7 +233,7 @@ function debouncedAutoSave() {
   saveTimer = setTimeout(() => autoSave(), 500)
 }
 
-export async function loadAutoSave(): Promise<{ shapes: Shape[]; lines: Line[]; freeLines?: FreeLine[] } | null> {
+export async function loadAutoSave(): Promise<{ shapes: Shape[]; lines: Line[]; freeLines?: FreeLine[]; texts?: TextBox[] } | null> {
   try {
     const db = await openDb()
     return new Promise((resolve) => {
@@ -230,9 +257,11 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   shapes: [],
   lines: [],
   freeLines: [],
+  texts: [],
   activeTool: 'select',
   editing: null,
   editingLine: null,
+  editingText: null,
   connecting: null,
   selection: null,
   layoutRunning: false,
@@ -244,7 +273,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   zoom: 1,
   theme: (localStorage.getItem('idrawm-theme') as Theme) || 'light',
   defaultPalette: loadDefaultPalette(),
-  history: [{ shapes: [], lines: [], freeLines: [] }],
+  history: [{ shapes: [], lines: [], freeLines: [], texts: [] }],
   historyIndex: 0,
 
   setTool: (tool) => set({ activeTool: tool }),
@@ -368,6 +397,13 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     } else if (selection.type === 'freeLine') {
       set((state) => ({ freeLines: state.freeLines.filter(f => f.id !== selection.id), selection: null }))
       debouncedAutoSave()
+    } else if (selection.type === 'text') {
+      set((state) => ({
+        texts: state.texts.filter(t => t.id !== selection.id),
+        selection: null,
+        editingText: state.editingText?.id === selection.id ? null : state.editingText,
+      }))
+      debouncedAutoSave()
     }
   },
 
@@ -479,6 +515,96 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     debouncedAutoSave()
   },
 
+  // Text box actions
+  addText: (canvasX, canvasY) => {
+    pushHistory(get, set)
+    const { defaultPalette, snapToGrid: snap } = get()
+    const text: TextBox = {
+      id: generateId(),
+      x: snap ? snapToGrid(canvasX) : canvasX,
+      y: snap ? snapToGrid(canvasY) : canvasY,
+      text: '',
+      ...DEFAULT_TEXT,
+      ...defaultPalette.text,
+    }
+    set((state) => ({
+      texts: [...state.texts, text],
+      shapes: state.shapes.map(s => ({ ...s, selected: false })),
+      activeTool: 'select',
+      selection: { type: 'text', id: text.id },
+      editing: null,
+      editingLine: null,
+      editingText: { id: text.id, original: null, historyIndex: get().historyIndex },
+    }))
+  },
+
+  selectText: (id) => {
+    set((state) => ({
+      shapes: state.shapes.map(s => ({ ...s, selected: false })),
+      selection: id ? { type: 'text', id } : null,
+    }))
+  },
+
+  setTextPosition: (id, x, y) => {
+    set((state) => ({ texts: state.texts.map(t => (t.id === id ? { ...t, x, y } : t)) }))
+    debouncedAutoSave()
+  },
+
+  // History is pushed once per editing session (addText / startEditingText), not per keystroke
+  updateTextContent: (id, text) => {
+    set((state) => ({ texts: state.texts.map(t => (t.id === id ? { ...t, text } : t)) }))
+    debouncedAutoSave()
+  },
+
+  updateTextStyle: (id, style) => {
+    pushHistory(get, set)
+    set((state) => ({ texts: state.texts.map(t => (t.id === id ? { ...t, ...style } : t)) }))
+    debouncedAutoSave()
+  },
+
+  setTextDefault: (style) => {
+    set((state) => {
+      const updated: DefaultPalette = {
+        ...state.defaultPalette,
+        text: { ...DEFAULT_TEXT, ...state.defaultPalette.text, ...style },
+      }
+      saveDefaultPalette(updated)
+      return { defaultPalette: updated }
+    })
+  },
+
+  startEditingText: (id) => {
+    const t = get().texts.find(x => x.id === id)
+    if (!t) return
+    pushHistory(get, set)
+    set((state) => ({
+      editingText: { id, original: t.text, historyIndex: get().historyIndex },
+      activeTool: 'select',
+      editing: null,
+      editingLine: null,
+      shapes: state.shapes.map(s => ({ ...s, selected: false })),
+      selection: { type: 'text', id },
+    }))
+  },
+
+  stopEditingText: () => {
+    const { editingText, texts, history, historyIndex, selection } = get()
+    if (!editingText) return
+    const t = texts.find(x => x.id === editingText.id)
+    const empty = !!t && !t.text.trim()
+    // An edit that changed nothing (including a new box left empty) gives back its history entry
+    const noop = !t || (editingText.original === null ? empty : t.text === editingText.original)
+    const canRollback = historyIndex === editingText.historyIndex && historyIndex === history.length - 1
+    set({
+      editingText: null,
+      // Empty text boxes are removed rather than left as invisible placeholders
+      texts: empty ? texts.filter(x => x.id !== editingText.id) : texts,
+      selection: empty && selection?.id === editingText.id ? null : selection,
+      ...(noop && canRollback ? { history: history.slice(0, -1), historyIndex: historyIndex - 1 } : {}),
+    })
+    debouncedAutoSave()
+  },
+
   // Line actions
   addLine: (fromId, toId) => {
     if (fromId === toId) return
@@ -578,8 +704,9 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     pushHistory(get, set)
     set((state) => {
       const newShapes = state.shapes.map(s => ({ ...s, ...snapShapePosition(s) }))
+      const newTexts = state.texts.map(t => ({ ...t, x: snapToGrid(t.x), y: snapToGrid(t.y) }))
       debouncedAutoSave()
-      return { shapes: newShapes, snapToGrid: true }
+      return { shapes: newShapes, texts: newTexts, snapToGrid: true }
     })
   },
 
@@ -703,7 +830,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
 
   // Undo / Redo
   undo: () => {
-    const { historyIndex, shapes, lines, freeLines } = get()
+    const { historyIndex, shapes, lines, freeLines, texts } = get()
     let { history } = get()
     if (historyIndex <= 0) return
     if (historyIndex === history.length - 1) {
@@ -712,6 +839,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
         shapes: shapes.map(s => ({ ...s })),
         lines: lines.map(l => ({ ...l })),
         freeLines: freeLines.map(f => ({ ...f })),
+        texts: texts.map(t => ({ ...t })),
       }]
     }
     const entry = history[historyIndex]
@@ -721,10 +849,12 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       shapes: entry.shapes.map(s => ({ ...s })),
       lines: entry.lines.map(l => ({ ...l })),
       freeLines: entry.freeLines.map(f => ({ ...f })),
+      texts: entry.texts.map(t => ({ ...t })),
       historyIndex: newIndex,
       selection: null,
       editing: null,
       editingLine: null,
+      editingText: null,
     })
     debouncedAutoSave()
   },
@@ -738,10 +868,12 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       shapes: entry.shapes.map(s => ({ ...s })),
       lines: entry.lines.map(l => ({ ...l })),
       freeLines: entry.freeLines.map(f => ({ ...f })),
+      texts: entry.texts.map(t => ({ ...t })),
       historyIndex: newIndex,
       selection: null,
       editing: null,
       editingLine: null,
+      editingText: null,
     })
     debouncedAutoSave()
   },
@@ -751,8 +883,8 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
 
   // Persistence
   saveDiagram: () => {
-    const { shapes, lines, freeLines } = get()
-    return JSON.stringify({ shapes, lines, freeLines }, null, 2)
+    const { shapes, lines, freeLines, texts } = get()
+    return JSON.stringify({ shapes, lines, freeLines, texts }, null, 2)
   },
 
   loadDiagram: (json) => {
@@ -776,9 +908,11 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
           shapes: migratedShapes,
           lines: data.lines || [],
           freeLines: Array.isArray(data.freeLines) ? data.freeLines : [],
+          texts: Array.isArray(data.texts) ? data.texts : [],
           selection: null,
           editing: null,
           editingLine: null,
+          editingText: null,
         })
         debouncedAutoSave()
       }

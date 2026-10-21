@@ -1,6 +1,7 @@
 import { useDiagramStore } from '../../store/diagramStore'
 import type { TextZone, IconAlign } from '../../store/diagramStore'
 import type { ShapeType } from '../../core/model'
+import { TEXT_SIZES } from '../../core/textBox'
 import './PropertyPanel.css'
 
 const PALETTE = [
@@ -278,6 +279,72 @@ function LineProperties() {
   )
 }
 
+function TextProperties() {
+  const selection = useDiagramStore(s => s.selection)
+  const texts = useDiagramStore(s => s.texts)
+  const updateTextStyle = useDiagramStore(s => s.updateTextStyle)
+  const setTextDefault = useDiagramStore(s => s.setTextDefault)
+
+  if (!selection || selection.type !== 'text') return null
+  const t = texts.find(x => x.id === selection.id)
+  if (!t) return null
+
+  return (
+    <div className="property-panel">
+      <div className="prop-section">
+        <div className="prop-label">Size</div>
+        <div className="text-size-row">
+          {TEXT_SIZES.map(({ label, scale }) => (
+            <button
+              key={label}
+              className={`text-size-btn ${t.scale === scale ? 'selected' : ''}`}
+              onClick={() => updateTextStyle(t.id, { scale })}
+              title={`${scale}\u00D7 normal text size`}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            className={`text-size-btn bold ${t.bold ? 'selected' : ''}`}
+            onClick={() => updateTextStyle(t.id, { bold: !t.bold })}
+            title="Bold"
+          >
+            B
+          </button>
+        </div>
+      </div>
+
+      <div className="prop-section">
+        <div className="prop-label">Colour</div>
+        <div className="color-grid">
+          {PALETTE.slice(1, 16).map(c => (
+            <ColorSwatch
+              key={`textbox-${c}`}
+              color={c}
+              selected={t.color === c}
+              onClick={() => updateTextStyle(t.id, { color: c })}
+            />
+          ))}
+        </div>
+        <input
+          type="color"
+          className="color-input"
+          value={t.color}
+          onChange={e => updateTextStyle(t.id, { color: e.target.value })}
+        />
+      </div>
+
+      <button
+        className="set-default-btn"
+        onClick={() => setTextDefault({ scale: t.scale, bold: t.bold, color: t.color })}
+        title="Use this size, weight and colour for new text"
+      >
+        Set as Default
+      </button>
+    </div>
+  )
+}
+
 export default function PropertyPanel() {
   const selection = useDiagramStore(s => s.selection)
   if (!selection) return null
@@ -286,6 +353,7 @@ export default function PropertyPanel() {
     <>
       <ShapeProperties />
       <LineProperties />
+      <TextProperties />
     </>
   )
 }

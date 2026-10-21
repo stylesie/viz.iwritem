@@ -43,10 +43,22 @@ export interface FreeLine {
   color: string
 }
 
+/** Free-standing text, e.g. page headers. Its font size is `scale` × TEXT_BASE_SIZE (textBox.ts). */
+export interface TextBox {
+  id: string
+  x: number // top-left
+  y: number
+  text: string
+  scale: number
+  bold: boolean
+  color: string
+}
+
 export interface Diagram {
   shapes: Shape[]
   lines: Line[]
   freeLines: FreeLine[]
+  texts: TextBox[]
 }
 
 let nextId = 1
