@@ -31,6 +31,13 @@ const LAYOUT_OPTIONS = {
   'elk.layered.cycleBreaking.strategy': 'MODEL_ORDER',
   'elk.layered.considerModelOrder.strategy': 'NODES_AND_EDGES',
   'elk.edgeLabels.placement': 'CENTER',
+  // Groups are compound nodes; lay them out together with the edges that cross into them
+  'elk.hierarchyHandling': 'INCLUDE_CHILDREN',
+}
+
+// Room between a group's members and the edge of its cluster
+const GROUP_OPTIONS = {
+  'elk.padding': '[top=24,left=24,bottom=24,right=24]',
 }
 
 const LABEL_FONT_PX = 12
@@ -73,6 +80,24 @@ function flowOrder(shapes: Shape[], lines: Line[]): Shape[] {
   return order.map(id => byId.get(id)!)
 }
 
+const GROUP_NODE_PREFIX = 'group:'
+
+interface ElkNodeInput {
+  id: string
+  width?: number
+  height?: number
+  layoutOptions?: Record<string, string>
+  children?: ElkNodeInput[]
+  edges?: unknown[]
+}
+
+interface ElkNodeOutput {
+  id: string
+  x?: number
+  y?: number
+  children?: ElkNodeOutput[]
+}
+
 export interface LayoutResult {
   positions: Map<string, { x: number; y: number }>
 }
@@ -95,34 +120,55 @@ export async function runLayout(shapes: Shape[], lines: Line[]): Promise<LayoutR
     return { positions }
   }
 
-  // Build ELK graph
-  const graph = {
-    id: 'root',
-    layoutOptions: LAYOUT_OPTIONS,
-    children: flowOrder(shapes, lines).map(s => ({
-      id: s.id,
-      width: s.width,
-      height: s.height,
-    })),
-    edges: lines.map(l => ({
-      id: l.id,
-      sources: [l.fromId],
-      targets: [l.toId],
-      labels: l.label
-        ? [{ text: l.label, width: l.label.length * LABEL_FONT_PX * 0.6 + 8, height: LABEL_FONT_PX + 8 }]
-        : [],
-    })),
+  // Build ELK graph: grouped shapes become children of a compound node per group, placed in the
+  // flow where the group's first member falls
+  const edgeOf = (l: Line) => ({
+    id: l.id,
+    sources: [l.fromId],
+    targets: [l.toId],
+    labels: l.label
+      ? [{ text: l.label, width: l.label.length * LABEL_FONT_PX * 0.6 + 8, height: LABEL_FONT_PX + 8 }]
+      : [],
+  })
+  const groupOf = new Map(shapes.map(s => [s.id, s.groupId]))
+  const children: ElkNodeInput[] = []
+  const groupNodes = new Map<string, ElkNodeInput>()
+  for (const s of flowOrder(shapes, lines)) {
+    const node = { id: s.id, width: s.width, height: s.height }
+    if (!s.groupId) {
+      children.push(node)
+      continue
+    }
+    let group = groupNodes.get(s.groupId)
+    if (!group) {
+      group = { id: GROUP_NODE_PREFIX + s.groupId, layoutOptions: GROUP_OPTIONS, children: [], edges: [] }
+      groupNodes.set(s.groupId, group)
+      children.push(group)
+    }
+    group.children!.push(node)
   }
+  // An edge lives in the group both its ends belong to, otherwise at the root
+  const rootEdges = []
+  for (const l of lines) {
+    const g = groupOf.get(l.fromId)
+    if (g && g === groupOf.get(l.toId)) groupNodes.get(g)!.edges!.push(edgeOf(l))
+    else rootEdges.push(edgeOf(l))
+  }
+  const graph = { id: 'root', layoutOptions: LAYOUT_OPTIONS, children, edges: rootEdges }
 
   const elk = await getElk()
   const layouted = await elk.layout(graph)
 
+  // Children of a group are positioned relative to it
   const positions = new Map<string, { x: number; y: number }>()
-  if (layouted.children) {
-    for (const child of layouted.children) {
-      positions.set(child.id, { x: child.x ?? 0, y: child.y ?? 0 })
+  const collect = (nodes: ElkNodeOutput[] | undefined, ox: number, oy: number) => {
+    for (const n of nodes ?? []) {
+      const x = ox + (n.x ?? 0), y = oy + (n.y ?? 0)
+      if (n.id.startsWith(GROUP_NODE_PREFIX)) collect(n.children, x, y)
+      else positions.set(n.id, { x, y })
     }
   }
+  collect(layouted.children, 0, 0)
 
   return { positions }
 }

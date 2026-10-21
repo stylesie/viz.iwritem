@@ -21,7 +21,8 @@ export interface Shape {
   headerIconAlign: IconAlign
   bodyIconAlign: IconAlign
   footerIconAlign: IconAlign
-  selected: boolean
+  /** Members of a group are selected, moved and laid out together */
+  groupId?: string
 }
 
 export interface Line {
@@ -41,6 +42,7 @@ export interface FreeLine {
   x2: number
   y2: number
   color: string
+  groupId?: string
 }
 
 /** Free-standing text, e.g. page headers. Its font size is `scale` × TEXT_BASE_SIZE (textBox.ts). */
@@ -52,6 +54,7 @@ export interface TextBox {
   scale: number
   bold: boolean
   color: string
+  groupId?: string
 }
 
 export interface Diagram {
@@ -118,6 +121,5 @@ export function createShape(type: ShapeType, x: number, y: number, colors?: { fi
     headerIconAlign: 'left',
     bodyIconAlign: 'left',
     footerIconAlign: 'left',
-    selected: false,
   }
 }

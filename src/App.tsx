@@ -30,7 +30,9 @@ export default function App() {
   const undo = useDiagramStore(s => s.undo)
   const redo = useDiagramStore(s => s.redo)
   const deleteSelected = useDiagramStore(s => s.deleteSelected)
-  const selectAll = useDiagramStore(s => s.selectShape)
+  const selectAll = useDiagramStore(s => s.selectAll)
+  const groupSelection = useDiagramStore(s => s.groupSelection)
+  const ungroupSelection = useDiagramStore(s => s.ungroupSelection)
 
   // Apply theme to document
   useEffect(() => {
@@ -77,12 +79,18 @@ export default function App() {
       if (editing || editingLine || editingText) return
       if (isInput) return
 
-      // Ctrl+A: select all (prevent default browser select)
+      // Ctrl+A: select everything (prevent default browser select)
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
         e.preventDefault()
-        // Select first shape as a basic "select all" indicator
-        const shapes = useDiagramStore.getState().shapes
-        if (shapes.length > 0) selectAll(shapes[0].id)
+        selectAll()
+        return
+      }
+
+      // Ctrl+G groups the selection, Ctrl+Shift+G ungroups it
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'g') {
+        e.preventDefault()
+        if (e.shiftKey) ungroupSelection()
+        else groupSelection()
         return
       }
 
@@ -101,7 +109,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
-  }, [setTool, editing, editingLine, editingText, undo, redo, deleteSelected, selectAll])
+  }, [setTool, editing, editingLine, editingText, undo, redo, deleteSelected, selectAll, groupSelection, ungroupSelection])
 
   if (!restored) return <div className="app" />
 

@@ -44,6 +44,13 @@ src/
 ### State Management
 All mutable state lives in a single Zustand store. Components subscribe to individual selectors to minimize re-renders. No props drilling -- components read directly from the store.
 
+### Selection and Groups
+`selection` is a list of element ids (unique across shapes, connectors, free lines and text boxes). There is no per-element `selected` flag, so selecting never replaces the `shapes` array. `select(ids, mode)` replaces, adds to or toggles the selection, and always pulls in every member of any group touched (`withGroupMates()`), so a selection holds whole groups. Style actions (`updateShapeColors`, `changeShapeType`, `updateShapeIcon(Align)`, `updateLineColor`, `updateTextStyle`) take id lists and push one history entry for the lot.
+
+A group is an optional `groupId` on shapes, free lines and text boxes (flat, no nesting; connectors belong to their shapes). `groupSelection()` gives the selection a new id, merging any groups in it; `ungroupSelection()` clears it; `deleteSelected()` dissolves groups left with fewer than two members. Excalidraw export maps `groupId` to `groupIds`, including connectors whose ends share a group.
+
+Dragging in `DiagramCanvas.tsx`: a drag on an item selects it if needed, captures `MoveOrigins` for every selected item, and each frame derives the offset from the grabbed item's own constraint (shape centre: angle lock / grid snap; text box or free line: `constrainPoint()`), then applies it to all via `moveItems()`. A drag on empty canvas draws a selection box (`idsInRect()`); panning is two-finger (the pinch handler pans by the movement of the point between the fingers), middle button or Space+drag.
+
 ### Rendering
 Shapes are rendered on a single `<canvas>` element using Rough.js. The render loop runs via `requestAnimationFrame` triggered by state changes. No React DOM elements are used for shapes -- everything is drawn imperatively.
 
@@ -58,6 +65,8 @@ The layout result is offset so the center of mass of connected shapes stays cons
 Both run through `startLayout()`. ELK is asynchronous, so when a result arrives it is dropped if the connected shapes' positions or sizes, or the connectors, changed in the meantime (drag, undo, load...). A `triggerLayout()` call while a layout is running is queued and runs once it finishes.
 
 When `layoutLocked` is true, `triggerLayout()` is a no-op. `forceLayout()` bypasses the lock and always runs (used by the Arrange button). Force layout pushes history first so it's undoable.
+
+Groups are laid out as clusters: each group with a connected member becomes an ELK compound node holding all its shapes (`elk.hierarchyHandling: INCLUDE_CHILDREN`); edges inside one group go in that node, the rest at the root, and child positions come back relative to the group. A group's free lines and text boxes move with the displacement of the nearest member shape.
 
 Children are passed to ELK in breadth-first flow order from root shapes (no incoming lines), with `MODEL_ORDER` cycle breaking, so loops become back-edges rather than reordering the flow.
 

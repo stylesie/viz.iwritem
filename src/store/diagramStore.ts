@@ -81,7 +81,15 @@ interface ConnectingState {
 
 export type Theme = 'light' | 'dark'
 
-type SelectionKind = { type: 'shape'; id: string } | { type: 'line'; id: string } | { type: 'freeLine'; id: string } | { type: 'text'; id: string } | null
+/** How a click or selection box combines with the current selection */
+export type SelectMode = 'replace' | 'add' | 'toggle'
+
+/** Positions of the items being dragged at drag start; moves apply from here so snapping never drifts */
+export interface MoveOrigins {
+  shapes: Map<string, { x: number; y: number }>
+  freeLines: Map<string, FreeLine>
+  texts: Map<string, { x: number; y: number }>
+}
 
 interface HistoryEntry {
   shapes: Shape[]
@@ -102,7 +110,8 @@ interface DiagramState {
   editingLine: EditingLineState | null
   editingText: EditingTextState | null
   connecting: ConnectingState | null
-  selection: SelectionKind
+  // Ids of the selected elements (ids are unique across shapes, connectors, lines and text boxes)
+  selection: string[]
   layoutRunning: boolean
   // Why the last auto-save failed, or null once one succeeds
   saveError: string | null
@@ -127,13 +136,16 @@ interface DiagramState {
   setShapeDefault: (type: ShapeType, colors: Partial<ShapeColorDefaults>) => void
   setLineDefault: (colors: { color: string }) => void
   addShape: (type: ShapeType, canvasX: number, canvasY: number) => void
-  selectShape: (id: string | null) => void
-  selectLine: (id: string | null) => void
+  /** Select elements; picking any member of a group picks the whole group */
+  select: (ids: string[], mode?: SelectMode) => void
+  selectAll: () => void
   clearSelection: () => void
-  moveShape: (id: string, dx: number, dy: number) => void
+  moveItems: (origins: MoveOrigins, dx: number, dy: number) => void
   setShapePosition: (id: string, x: number, y: number) => void
   pushMoveHistory: () => void
   deleteSelected: () => void
+  groupSelection: () => void
+  ungroupSelection: () => void
   setPan: (x: number, y: number) => void
   /** Zoom to `zoom`, keeping the canvas point under screen point (sx, sy) still */
   zoomAt: (sx: number, sy: number, zoom: number) => void
@@ -142,23 +154,21 @@ interface DiagramState {
   stopEditing: () => void
 
   // Colour / icon actions
-  updateShapeColors: (id: string, colors: { fillColor?: string; strokeColor?: string; textColor?: string }) => void
-  changeShapeType: (id: string, type: ShapeType) => void
-  updateShapeIcon: (id: string, zone: TextZone, icon: string) => void
-  updateShapeIconAlign: (id: string, zone: TextZone, align: IconAlign) => void
-  updateLineColor: (id: string, color: string) => void
+  updateShapeColors: (ids: string[], colors: { fillColor?: string; strokeColor?: string; textColor?: string }) => void
+  changeShapeType: (ids: string[], type: ShapeType) => void
+  updateShapeIcon: (ids: string[], zone: TextZone, icon: string) => void
+  updateShapeIconAlign: (ids: string[], zone: TextZone, align: IconAlign) => void
+  updateLineColor: (ids: string[], color: string) => void
 
   // Free line actions
   addFreeLine: (x1: number, y1: number, x2: number, y2: number) => void
-  selectFreeLine: (id: string | null) => void
   setFreeLinePoints: (id: string, x1: number, y1: number, x2: number, y2: number) => void
 
   // Text box actions
   addText: (canvasX: number, canvasY: number) => void
-  selectText: (id: string | null) => void
   setTextPosition: (id: string, x: number, y: number) => void
   updateTextContent: (id: string, text: string) => void
-  updateTextStyle: (id: string, style: Partial<TextDefaults>) => void
+  updateTextStyle: (ids: string[], style: Partial<TextDefaults>) => void
   setTextDefault: (style: Partial<TextDefaults>) => void
   startEditingText: (id: string) => void
   stopEditingText: () => void
@@ -216,6 +226,32 @@ function pushHistory(get: () => DiagramState, set: (fn: (s: DiagramState) => Par
   // Cap history size
   if (newHistory.length > MAX_HISTORY) newHistory.shift()
   set(() => ({ history: newHistory, historyIndex: newHistory.length - 1 }))
+}
+
+/** The ids plus every other member of any group they belong to */
+function withGroupMates(state: Pick<DiagramState, 'shapes' | 'freeLines' | 'texts'>, ids: string[]): string[] {
+  const groupable = [...state.shapes, ...state.freeLines, ...state.texts]
+  const picked = new Set(ids)
+  const groups = new Set(groupable.filter(el => el.groupId && picked.has(el.id)).map(el => el.groupId))
+  if (groups.size > 0) for (const el of groupable) if (el.groupId && groups.has(el.groupId)) picked.add(el.id)
+  return [...picked]
+}
+
+function withoutGroup<E extends { groupId?: string }>(el: E): E {
+  const copy = { ...el }
+  delete copy.groupId
+  return copy
+}
+
+/** Ungroup whatever is left of groups with fewer than two members (e.g. after a delete) */
+function dissolveSmallGroups(els: { shapes: Shape[]; freeLines: FreeLine[]; texts: TextBox[] }) {
+  const counts = new Map<string, number>()
+  for (const el of [...els.shapes, ...els.freeLines, ...els.texts]) {
+    if (el.groupId) counts.set(el.groupId, (counts.get(el.groupId) ?? 0) + 1)
+  }
+  const fix = <E extends { groupId?: string }>(list: E[]) =>
+    list.map(el => (el.groupId && (counts.get(el.groupId) ?? 0) < 2 ? withoutGroup(el) : el))
+  return { shapes: fix(els.shapes), freeLines: fix(els.freeLines), texts: fix(els.texts) }
 }
 
 /** Entries redo can still reach (pushHistory discards them) */
@@ -286,16 +322,20 @@ export async function loadAutoSave(): Promise<{ shapes: Shape[]; lines: Line[]; 
 // triggerLayout() was called while a layout was running; rerun once it finishes
 let layoutPending = false
 
-/** Shapes a layout covers (those with a connector), plus a key of everything its result depends on */
+/**
+ * Shapes a layout covers (those with a connector, plus every shape in a group that has one, since
+ * a group is laid out as one cluster), and a key of everything its result depends on
+ */
 function layoutInput(shapes: Shape[], lines: Line[]) {
   const connectedIds = new Set<string>()
   for (const l of lines) {
     connectedIds.add(l.fromId)
     connectedIds.add(l.toId)
   }
-  const connectedShapes = shapes.filter(s => connectedIds.has(s.id))
+  const groups = new Set(shapes.filter(s => s.groupId && connectedIds.has(s.id)).map(s => s.groupId))
+  const connectedShapes = shapes.filter(s => connectedIds.has(s.id) || (s.groupId && groups.has(s.groupId)))
   const key = JSON.stringify([
-    connectedShapes.map(s => [s.id, s.x, s.y, s.width, s.height]),
+    connectedShapes.map(s => [s.id, s.x, s.y, s.width, s.height, s.groupId ?? '']),
     lines.map(l => [l.fromId, l.toId]),
   ])
   return { connectedShapes, key }
@@ -334,12 +374,35 @@ function startLayout(get: () => DiagramState, set: (partial: Partial<DiagramStat
     const offsetX = curCx - layCx
     const offsetY = curCy - layCy
 
+    // Lines and text boxes in a laid-out group move with the nearest member shape, so a label
+    // stays with the shape it annotates even when the group's members are rearranged
+    const moved = new Map<string, { cx: number; cy: number; dx: number; dy: number }[]>()
+    const newShapes = current.shapes.map(s => {
+      const pos = positions.get(s.id)
+      if (!pos) return s
+      let placed = { ...s, x: pos.x + offsetX, y: pos.y + offsetY }
+      if (current.snapToGrid) placed = { ...placed, ...snapShapePosition(placed) }
+      if (s.groupId) {
+        const list = moved.get(s.groupId) ?? []
+        list.push({ cx: s.x + s.width / 2, cy: s.y + s.height / 2, dx: placed.x - s.x, dy: placed.y - s.y })
+        moved.set(s.groupId, list)
+      }
+      return placed
+    })
+    const shiftOf = (groupId: string | undefined, x: number, y: number) => {
+      const list = groupId ? moved.get(groupId) : undefined
+      if (!list) return undefined
+      return list.reduce((best, m) => (Math.hypot(m.cx - x, m.cy - y) < Math.hypot(best.cx - x, best.cy - y) ? m : best))
+    }
     set({
-      shapes: current.shapes.map(s => {
-        const pos = positions.get(s.id)
-        if (!pos) return s
-        const placed = { ...s, x: pos.x + offsetX, y: pos.y + offsetY }
-        return current.snapToGrid ? { ...placed, ...snapShapePosition(placed) } : placed
+      shapes: newShapes,
+      texts: moved.size === 0 ? current.texts : current.texts.map(t => {
+        const d = shiftOf(t.groupId, t.x, t.y)
+        return d ? { ...t, x: t.x + d.dx, y: t.y + d.dy } : t
+      }),
+      freeLines: moved.size === 0 ? current.freeLines : current.freeLines.map(f => {
+        const d = shiftOf(f.groupId, (f.x1 + f.x2) / 2, (f.y1 + f.y2) / 2)
+        return d ? { ...f, x1: f.x1 + d.dx, y1: f.y1 + d.dy, x2: f.x2 + d.dx, y2: f.y2 + d.dy } : f
       }),
     })
     debouncedAutoSave()
@@ -364,7 +427,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   editingLine: null,
   editingText: null,
   connecting: null,
-  selection: null,
+  selection: [],
   layoutRunning: false,
   saveError: null,
   layoutLocked: localStorage.getItem('idrawm-layout-locked') === 'true',
@@ -414,45 +477,52 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     const snap = get().snapToGrid
     const shape = createShape(type, snap ? snapToGrid(canvasX) : canvasX, snap ? snapToGrid(canvasY) : canvasY, palette ? { fillColor: palette.fillColor, strokeColor: palette.strokeColor, textColor: palette.textColor } : undefined)
     set((state) => {
-      const newShapes = [...state.shapes.map(s => ({ ...s, selected: false })), { ...shape, selected: true }]
+      const newShapes = [...state.shapes, shape]
       debouncedAutoSave()
       return {
         shapes: newShapes,
         activeTool: 'select',
-        selection: { type: 'shape', id: shape.id },
+        selection: [shape.id],
       }
     })
   },
 
-  selectShape: (id) => {
-    set((state) => ({
-      shapes: state.shapes.map(s => ({ ...s, selected: s.id === id })),
-      selection: id ? { type: 'shape', id } : null,
-    }))
-  },
-
-  selectLine: (id) => {
-    set((state) => ({
-      shapes: state.shapes.map(s => ({ ...s, selected: false })),
-      selection: id ? { type: 'line', id } : null,
-    }))
-  },
-
-  clearSelection: () => {
-    set((state) => ({
-      shapes: state.shapes.map(s => ({ ...s, selected: false })),
-      selection: null,
-    }))
-  },
-
-  moveShape: (id, dx, dy) => {
+  select: (ids, mode = 'replace') => {
     set((state) => {
-      const newShapes = state.shapes.map(s =>
-        s.id === id ? { ...s, x: s.x + dx, y: s.y + dy } : s
-      )
-      debouncedAutoSave()
-      return { shapes: newShapes }
+      const picked = withGroupMates(state, ids)
+      if (mode === 'replace') return { selection: picked }
+      const current = new Set(state.selection)
+      // Toggle removes the picked items only if they're all selected already (a group counts as one)
+      const remove = mode === 'toggle' && picked.length > 0 && picked.every(id => current.has(id))
+      for (const id of picked) {
+        if (remove) current.delete(id)
+        else current.add(id)
+      }
+      return { selection: [...current] }
     })
+  },
+
+  selectAll: () => {
+    set((state) => ({ selection: [...state.shapes, ...state.lines, ...state.freeLines, ...state.texts].map(el => el.id) }))
+  },
+
+  clearSelection: () => set({ selection: [] }),
+
+  moveItems: (origins, dx, dy) => {
+    const move = <E extends { id: string; x: number; y: number }>(list: E[], from: Map<string, { x: number; y: number }>) =>
+      from.size === 0 ? list : list.map(el => {
+        const o = from.get(el.id)
+        return o ? { ...el, x: o.x + dx, y: o.y + dy } : el
+      })
+    set((state) => ({
+      shapes: move(state.shapes, origins.shapes),
+      texts: move(state.texts, origins.texts),
+      freeLines: origins.freeLines.size === 0 ? state.freeLines : state.freeLines.map(f => {
+        const o = origins.freeLines.get(f.id)
+        return o ? { ...f, x1: o.x1 + dx, y1: o.y1 + dy, x2: o.x2 + dx, y2: o.y2 + dy } : f
+      }),
+    }))
+    debouncedAutoSave()
   },
 
   setShapePosition: (id, x, y) => {
@@ -469,44 +539,52 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   },
 
   deleteSelected: () => {
-    const { selection, shapes, lines, editing, editingLine } = get()
-    if (!selection) return
+    const { selection, shapes, lines, freeLines, texts, editing, editingLine, editingText } = get()
+    if (selection.length === 0) return
+    const gone = new Set(selection)
 
     pushHistory(get, set)
-
-    if (selection.type === 'shape') {
-      const deletedId = selection.id
-      const newShapes = shapes.filter(s => s.id !== deletedId).map(s => ({ ...s, selected: false }))
-      const newLines = lines.filter(l => l.fromId !== deletedId && l.toId !== deletedId)
-      set({
+    // Connectors go with either of their shapes
+    const newLines = lines.filter(l => !gone.has(l.id) && !gone.has(l.fromId) && !gone.has(l.toId))
+    const newShapes = shapes.filter(s => !gone.has(s.id))
+    set({
+      ...dissolveSmallGroups({
         shapes: newShapes,
-        lines: newLines,
-        selection: null,
-        editing: editing?.shapeId === deletedId ? null : editing,
-      })
-      debouncedAutoSave()
-      get().triggerLayout()
-    } else if (selection.type === 'line') {
-      const deletedId = selection.id
-      const newLines = lines.filter(l => l.id !== deletedId)
-      set({
-        lines: newLines,
-        selection: null,
-        editingLine: editingLine?.lineId === deletedId ? null : editingLine,
-      })
-      debouncedAutoSave()
-      get().triggerLayout()
-    } else if (selection.type === 'freeLine') {
-      set((state) => ({ freeLines: state.freeLines.filter(f => f.id !== selection.id), selection: null }))
-      debouncedAutoSave()
-    } else if (selection.type === 'text') {
-      set((state) => ({
-        texts: state.texts.filter(t => t.id !== selection.id),
-        selection: null,
-        editingText: state.editingText?.id === selection.id ? null : state.editingText,
-      }))
-      debouncedAutoSave()
-    }
+        freeLines: freeLines.filter(f => !gone.has(f.id)),
+        texts: texts.filter(t => !gone.has(t.id)),
+      }),
+      lines: newLines,
+      selection: [],
+      editing: editing && gone.has(editing.shapeId) ? null : editing,
+      editingLine: editingLine && !newLines.some(l => l.id === editingLine.lineId) ? null : editingLine,
+      editingText: editingText && gone.has(editingText.id) ? null : editingText,
+    })
+    debouncedAutoSave()
+    if (newShapes.length !== shapes.length || newLines.length !== lines.length) get().triggerLayout()
+  },
+
+  groupSelection: () => {
+    const { selection, shapes, freeLines, texts } = get()
+    const sel = new Set(selection)
+    if ([...shapes, ...freeLines, ...texts].filter(el => sel.has(el.id)).length < 2) return
+    pushHistory(get, set)
+    const groupId = generateId()
+    // Selections always hold whole groups, so grouping members of existing groups merges them
+    const join = <E extends { id: string; groupId?: string }>(list: E[]) => list.map(el => (sel.has(el.id) ? { ...el, groupId } : el))
+    set((state) => ({ shapes: join(state.shapes), freeLines: join(state.freeLines), texts: join(state.texts) }))
+    debouncedAutoSave()
+    get().triggerLayout()
+  },
+
+  ungroupSelection: () => {
+    const { selection, shapes, freeLines, texts } = get()
+    const sel = new Set(selection)
+    if (![...shapes, ...freeLines, ...texts].some(el => sel.has(el.id) && el.groupId)) return
+    pushHistory(get, set)
+    const leave = <E extends { id: string; groupId?: string }>(list: E[]) => list.map(el => (sel.has(el.id) && el.groupId ? withoutGroup(el) : el))
+    set((state) => ({ shapes: leave(state.shapes), freeLines: leave(state.freeLines), texts: leave(state.texts) }))
+    debouncedAutoSave()
+    get().triggerLayout()
   },
 
   setPan: (x, y) => set({ panX: x, panY: y }),
@@ -533,22 +611,21 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   },
 
   startEditing: (shapeId, zone) => {
-    set((state) => ({
+    set({
       editing: { shapeId, zone },
       editingLine: null,
-      shapes: state.shapes.map(s => ({ ...s, selected: s.id === shapeId })),
-      selection: { type: 'shape', id: shapeId },
-    }))
+      selection: [shapeId],
+    })
   },
 
   stopEditing: () => set({ editing: null }),
 
   // Colour / icon actions
-  updateShapeColors: (id, colors) => {
+  updateShapeColors: (ids, colors) => {
     pushHistory(get, set)
     set((state) => {
       const newShapes = state.shapes.map(s =>
-        s.id === id ? { ...s, ...colors } : s
+        ids.includes(s.id) ? { ...s, ...colors } : s
       )
       debouncedAutoSave()
       return { shapes: newShapes }
@@ -556,13 +633,12 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   },
 
   /** Turn a shape into another type, keeping its text, colours, icons and connectors */
-  changeShapeType: (id, type) => {
-    const shape = get().shapes.find(s => s.id === id)
-    if (!shape || shape.type === type) return
+  changeShapeType: (ids, type) => {
+    if (!get().shapes.some(s => ids.includes(s.id) && s.type !== type)) return
     pushHistory(get, set)
     set((state) => {
       const newShapes = state.shapes.map(s => {
-        if (s.id !== id) return s
+        if (!ids.includes(s.id) || s.type === type) return s
         // Re-fit around the same centre: some types need more room for the same text
         const updated = { ...s, type }
         return { ...updated, ...autoResizeShape(updated) }
@@ -573,12 +649,12 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     get().triggerLayout()
   },
 
-  updateShapeIcon: (id, zone, icon) => {
+  updateShapeIcon: (ids, zone, icon) => {
     pushHistory(get, set)
     const iconKey = `${zone}Icon` as const
     set((state) => {
       const newShapes = state.shapes.map(s => {
-        if (s.id !== id) return s
+        if (!ids.includes(s.id)) return s
         // An icon takes room beside or above the text, so re-fit like a text change
         const updated = { ...s, [iconKey]: icon }
         return { ...updated, ...autoResizeShape(updated) }
@@ -589,12 +665,12 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     get().triggerLayout()
   },
 
-  updateShapeIconAlign: (id, zone, align) => {
+  updateShapeIconAlign: (ids, zone, align) => {
     pushHistory(get, set)
     const alignKey = `${zone}IconAlign` as const
     set((state) => {
       const newShapes = state.shapes.map(s => {
-        if (s.id !== id) return s
+        if (!ids.includes(s.id)) return s
         const updated = { ...s, [alignKey]: align }
         const resized = autoResizeShape(updated)
         return { ...updated, ...resized }
@@ -605,13 +681,13 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     get().triggerLayout()
   },
 
-  updateLineColor: (id, color) => {
+  updateLineColor: (ids, color) => {
     pushHistory(get, set)
     set((state) => {
       const newLines = state.lines.map(l =>
-        l.id === id ? { ...l, color } : l
+        ids.includes(l.id) ? { ...l, color } : l
       )
-      const newFreeLines = state.freeLines.map(f => (f.id === id ? { ...f, color } : f))
+      const newFreeLines = state.freeLines.map(f => (ids.includes(f.id) ? { ...f, color } : f))
       debouncedAutoSave()
       return { lines: newLines, freeLines: newFreeLines }
     })
@@ -623,18 +699,10 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     const freeLine: FreeLine = { id: generateId(), x1, y1, x2, y2, color: get().defaultPalette.line.color }
     set((state) => ({
       freeLines: [...state.freeLines, freeLine],
-      shapes: state.shapes.map(s => ({ ...s, selected: false })),
       activeTool: 'select',
-      selection: { type: 'freeLine', id: freeLine.id },
+      selection: [freeLine.id],
     }))
     debouncedAutoSave()
-  },
-
-  selectFreeLine: (id) => {
-    set((state) => ({
-      shapes: state.shapes.map(s => ({ ...s, selected: false })),
-      selection: id ? { type: 'freeLine', id } : null,
-    }))
   },
 
   setFreeLinePoints: (id, x1, y1, x2, y2) => {
@@ -659,19 +727,11 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     }
     set((state) => ({
       texts: [...state.texts, text],
-      shapes: state.shapes.map(s => ({ ...s, selected: false })),
       activeTool: 'select',
-      selection: { type: 'text', id: text.id },
+      selection: [text.id],
       editing: null,
       editingLine: null,
       editingText: { id: text.id, original: null, historyIndex: get().historyIndex, redoTail },
-    }))
-  },
-
-  selectText: (id) => {
-    set((state) => ({
-      shapes: state.shapes.map(s => ({ ...s, selected: false })),
-      selection: id ? { type: 'text', id } : null,
     }))
   },
 
@@ -686,9 +746,9 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     debouncedAutoSave()
   },
 
-  updateTextStyle: (id, style) => {
+  updateTextStyle: (ids, style) => {
     pushHistory(get, set)
-    set((state) => ({ texts: state.texts.map(t => (t.id === id ? { ...t, ...style } : t)) }))
+    set((state) => ({ texts: state.texts.map(t => (ids.includes(t.id) ? { ...t, ...style } : t)) }))
     debouncedAutoSave()
   },
 
@@ -708,14 +768,13 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     if (!t) return
     const redoTail = redoEntries(get())
     pushHistory(get, set)
-    set((state) => ({
+    set({
       editingText: { id, original: t.text, historyIndex: get().historyIndex, redoTail },
       activeTool: 'select',
       editing: null,
       editingLine: null,
-      shapes: state.shapes.map(s => ({ ...s, selected: false })),
-      selection: { type: 'text', id },
-    }))
+      selection: [id],
+    })
   },
 
   stopEditingText: () => {
@@ -730,7 +789,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       editingText: null,
       // Empty text boxes are removed rather than left as invisible placeholders
       texts: empty ? texts.filter(x => x.id !== editingText.id) : texts,
-      selection: empty && selection?.id === editingText.id ? null : selection,
+      selection: empty ? selection.filter(id => id !== editingText.id) : selection,
       ...(noop && canRollback
         ? { history: [...history.slice(0, -1), ...editingText.redoTail], historyIndex: historyIndex - 1 }
         : {}),
@@ -761,7 +820,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       return {
         lines: newLines,
         activeTool: 'select',
-        selection: { type: 'line', id: line.id },
+        selection: [line.id],
       }
     })
     get().triggerLayout()
@@ -780,7 +839,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     set({
       editingLine: { lineId },
       editing: null,
-      selection: { type: 'line', id: lineId },
+      selection: [lineId],
     })
   },
 
@@ -895,7 +954,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       freeLines: entry.freeLines.map(f => ({ ...f })),
       texts: entry.texts.map(t => ({ ...t })),
       historyIndex: newIndex,
-      selection: null,
+      selection: [],
       editing: null,
       editingLine: null,
       editingText: null,
@@ -914,7 +973,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       freeLines: entry.freeLines.map(f => ({ ...f })),
       texts: entry.texts.map(t => ({ ...t })),
       historyIndex: newIndex,
-      selection: null,
+      selection: [],
       editing: null,
       editingLine: null,
       editingText: null,
@@ -946,7 +1005,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       lines: diagram.lines.map(ink),
       freeLines: diagram.freeLines.map(ink),
       texts: diagram.texts.map(ink),
-      selection: null,
+      selection: [],
       editing: null,
       editingLine: null,
       editingText: null,

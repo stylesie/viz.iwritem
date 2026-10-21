@@ -2,7 +2,7 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import { useGesture } from '@use-gesture/react'
 import rough from 'roughjs'
 import { useDiagramStore } from '../../store/diagramStore'
-import type { Theme } from '../../store/diagramStore'
+import type { Theme, MoveOrigins, SelectMode } from '../../store/diagramStore'
 import { hitTestShape, getShapeEdgePoint, pointToSegmentDist, getPolygonVertices } from '../../utils/geometry'
 import { routeLine, polylineMidpoint } from '../../core/routing'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../../core/autoResize'
@@ -46,8 +46,8 @@ function getThemeColors(theme: Theme): ThemeColors {
 
 // ── Shape drawing ──────────────────────────────────────────────
 
-function drawShape(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingContext2D, shape: Shape, tc: ThemeColors) {
-  const { x, y, width: w, height: h, type, fillColor, strokeColor, selected } = shape
+function drawShape(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingContext2D, shape: Shape, tc: ThemeColors, selected: boolean) {
+  const { x, y, width: w, height: h, type, fillColor, strokeColor } = shape
 
   const options = {
     fill: fillColor,
@@ -361,6 +361,7 @@ function drawFreeLine(
   selected: boolean,
   tc: ThemeColors,
   zoom: number,
+  handles = selected,
 ) {
   ctx.save()
   ctx.strokeStyle = selected ? tc.selection : resolveColor(f.color, tc.ink)
@@ -371,7 +372,7 @@ function drawFreeLine(
   ctx.lineTo(f.x2, f.y2)
   ctx.stroke()
 
-  if (selected) {
+  if (handles) {
     // Endpoint handles stay the same size on screen at any zoom
     ctx.fillStyle = tc.canvasBg
     ctx.lineWidth = 1.5 / zoom
@@ -465,6 +466,55 @@ function findHitText(texts: TextBox[], canvasX: number, canvasY: number): TextBo
   return null
 }
 
+interface Rect { l: number; t: number; r: number; b: number }
+
+function normRect(a: Point, b: Point): Rect {
+  return { l: Math.min(a.x, b.x), t: Math.min(a.y, b.y), r: Math.max(a.x, b.x), b: Math.max(a.y, b.y) }
+}
+
+/** Elements wholly inside a canvas-space rectangle; a connector counts when both its shapes do */
+function idsInRect(r: Rect, shapes: Shape[], lines: Line[], freeLines: FreeLine[], texts: TextBox[]): string[] {
+  const inside = (x: number, y: number) => x >= r.l && x <= r.r && y >= r.t && y <= r.b
+  const ids: string[] = []
+  const shapeIds = new Set<string>()
+  for (const s of shapes) {
+    if (inside(s.x, s.y) && inside(s.x + s.width, s.y + s.height)) { ids.push(s.id); shapeIds.add(s.id) }
+  }
+  for (const t of texts) {
+    const { width, height } = layoutTextBox(t)
+    if (inside(t.x, t.y) && inside(t.x + width, t.y + height)) ids.push(t.id)
+  }
+  for (const f of freeLines) if (inside(f.x1, f.y1) && inside(f.x2, f.y2)) ids.push(f.id)
+  for (const l of lines) if (shapeIds.has(l.fromId) && shapeIds.has(l.toId)) ids.push(l.id)
+  return ids
+}
+
+/** Bounding box of each group that has a selected member, for its outline */
+function selectedGroupBounds(selected: Set<string>, shapes: Shape[], freeLines: FreeLine[], texts: TextBox[]): Rect[] {
+  const boxes = new Map<string, Rect>()
+  const add = (groupId: string | undefined, l: number, t: number, r: number, b: number) => {
+    if (!groupId) return
+    const box = boxes.get(groupId)
+    boxes.set(groupId, box
+      ? { l: Math.min(box.l, l), t: Math.min(box.t, t), r: Math.max(box.r, r), b: Math.max(box.b, b) }
+      : { l, t, r, b })
+  }
+  const groups = new Set([...shapes, ...freeLines, ...texts].filter(el => el.groupId && selected.has(el.id)).map(el => el.groupId))
+  if (groups.size === 0) return []
+  for (const s of shapes) if (groups.has(s.groupId)) add(s.groupId, s.x, s.y, s.x + s.width, s.y + s.height)
+  for (const f of freeLines) if (groups.has(f.groupId)) add(f.groupId, Math.min(f.x1, f.x2), Math.min(f.y1, f.y2), Math.max(f.x1, f.x2), Math.max(f.y1, f.y2))
+  for (const t of texts) {
+    if (!groups.has(t.groupId)) continue
+    const { width, height } = layoutTextBox(t)
+    add(t.groupId, t.x, t.y, t.x + width, t.y + height)
+  }
+  return [...boxes.values()]
+}
+
+const GROUP_OUTLINE_PAD = 12
+
+type MoveGrab = { kind: 'shape'; shape: Shape; anchors: Point[] } | { kind: 'point'; origin: Point }
+
 // ── Canvas component ──────────────────────────────────────────
 
 export default function DiagramCanvas() {
@@ -474,13 +524,10 @@ export default function DiagramCanvas() {
   const shapes = useDiagramStore(s => s.shapes)
   const freeLines = useDiagramStore(s => s.freeLines)
   const addFreeLine = useDiagramStore(s => s.addFreeLine)
-  const selectFreeLine = useDiagramStore(s => s.selectFreeLine)
   const setFreeLinePoints = useDiagramStore(s => s.setFreeLinePoints)
   const texts = useDiagramStore(s => s.texts)
   const editingText = useDiagramStore(s => s.editingText)
   const addText = useDiagramStore(s => s.addText)
-  const selectText = useDiagramStore(s => s.selectText)
-  const setTextPosition = useDiagramStore(s => s.setTextPosition)
   const startEditingText = useDiagramStore(s => s.startEditingText)
   const stopEditingText = useDiagramStore(s => s.stopEditingText)
   const lines = useDiagramStore(s => s.lines)
@@ -493,10 +540,9 @@ export default function DiagramCanvas() {
   const panY = useDiagramStore(s => s.panY)
   const zoom = useDiagramStore(s => s.zoom)
   const addShape = useDiagramStore(s => s.addShape)
-  const selectShape = useDiagramStore(s => s.selectShape)
-  const selectLine = useDiagramStore(s => s.selectLine)
+  const select = useDiagramStore(s => s.select)
+  const moveItems = useDiagramStore(s => s.moveItems)
   const clearSelection = useDiagramStore(s => s.clearSelection)
-  const setShapePosition = useDiagramStore(s => s.setShapePosition)
   const snapToGrid = useDiagramStore(s => s.snapToGrid)
   const angleLock = useDiagramStore(s => s.angleLock)
   const setPan = useDiagramStore(s => s.setPan)
@@ -511,11 +557,19 @@ export default function DiagramCanvas() {
   const startEditingLine = useDiagramStore(s => s.startEditingLine)
   const pushMoveHistory = useDiagramStore(s => s.pushMoveHistory)
 
-  const dragTargetRef = useRef<string | null>(null)
-  // Shape position at drag start — snapped drags are computed from here, not accumulated
-  const dragOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
-  // Centres a Shift-drag locks to: connected shapes, or the drag start if unconnected
-  const dragAnchorsRef = useRef<Point[]>([])
+  // Items being moved, their positions at drag start, and how the grabbed item constrains the move:
+  // a shape locks/snaps its centre, a text box or free line its top-left / first endpoint
+  const moveRef = useRef<{
+    origins: MoveOrigins
+    grab: MoveGrab
+    last: Point
+  } | null>(null)
+  // Selection box: start and current corner in canvas space
+  const marqueeRef = useRef<{ start: Point; end: Point; mode: SelectMode } | null>(null)
+  const [marquee, setMarquee] = useState<Rect | null>(null)
+  // Two fingers are down: they pan and zoom, so one-finger drag handling stands down
+  const pinchingRef = useRef(false)
+  const spaceHeldRef = useRef(false)
   const isPanningRef = useRef(false)
   // Canvas point where the pointer went down. The first drag event only fires after the
   // drag threshold, so drags are measured from here rather than from that event.
@@ -529,17 +583,15 @@ export default function DiagramCanvas() {
     draftRef.current = d
     setDraft(d)
   }
-  // Free line being moved (whole line) or reshaped (one endpoint)
-  const freeLineDragRef = useRef<{ id: string; mode: 'move' | 'p1' | 'p2'; orig: FreeLine } | null>(null)
-  // Text box being dragged, and its position at drag start
-  const textDragRef = useRef<{ id: string; origin: Point } | null>(null)
+  // Free line being reshaped by one endpoint handle (moving it goes through moveRef)
+  const freeLineDragRef = useRef<{ id: string; mode: 'p1' | 'p2'; orig: FreeLine } | null>(null)
   // Swallows the click that follows drawing or dragging a free line
   const suppressClickRef = useRef(false)
   const didDragRef = useRef(false)
   // Large diagrams only: while a shape is dragged, connectors not attached to it keep their routes
   // from the drag start (cached, so free each frame) and only its own connectors re-route live.
   // Everything re-routes once on drop.
-  const [routeFreeze, setRouteFreeze] = useState<{ shapes: Shape[]; movingId: string } | null>(null)
+  const [routeFreeze, setRouteFreeze] = useState<{ shapes: Shape[]; movingIds: Set<string> } | null>(null)
 
   // ── Render ──
 
@@ -566,16 +618,18 @@ export default function DiagramCanvas() {
     drawGrid(ctx, rect.width, rect.height, panX, panY, zoom, tc)
 
     // Draw lines first (behind shapes)
+    const selected = new Set(selection)
     for (const line of lines) {
-      const isSelected = selection?.type === 'line' && selection.id === line.id
-      const frozen = routeFreeze && line.fromId !== routeFreeze.movingId && line.toId !== routeFreeze.movingId
+      const isSelected = selected.has(line.id)
+      const frozen = routeFreeze && !routeFreeze.movingIds.has(line.fromId) && !routeFreeze.movingIds.has(line.toId)
       drawLine(ctx, line, frozen ? routeFreeze.shapes : shapes, isSelected, tc)
     }
 
     // Free lines sit with connectors, behind shapes
     for (const f of freeLines) {
-      const isSelected = selection?.type === 'freeLine' && selection.id === f.id
-      drawFreeLine(ctx, f, isSelected, tc, zoom)
+      const isSelected = selected.has(f.id)
+      // Endpoint handles only when the line is the whole selection, since only then can they be dragged
+      drawFreeLine(ctx, f, isSelected, tc, zoom, isSelected && selection.length === 1)
     }
     if (draft) {
       drawFreeLine(ctx, { ...draft, color: tc.selection }, false, tc, zoom)
@@ -592,16 +646,40 @@ export default function DiagramCanvas() {
     // Draw shapes
     const rc = rough.canvas(canvas)
     for (const shape of shapes) {
-      drawShape(rc, ctx, shape, tc)
+      drawShape(rc, ctx, shape, tc, selected.has(shape.id))
     }
 
     // Text boxes are drawn on top so headers stay readable over shapes
     for (const t of texts) {
-      drawTextBox(ctx, t, selection?.type === 'text' && selection.id === t.id, tc, zoom)
+      drawTextBox(ctx, t, selected.has(t.id), tc, zoom)
+    }
+
+    // Dashed outline around each selected group
+    ctx.save()
+    ctx.strokeStyle = tc.selection
+    ctx.lineWidth = 1 / zoom
+    ctx.setLineDash([6 / zoom, 4 / zoom])
+    for (const b of selectedGroupBounds(selected, shapes, freeLines, texts)) {
+      const pad = GROUP_OUTLINE_PAD
+      ctx.strokeRect(b.l - pad, b.t - pad, b.r - b.l + pad * 2, b.b - b.t + pad * 2)
+    }
+    ctx.restore()
+
+    if (marquee) {
+      ctx.save()
+      ctx.fillStyle = tc.selection
+      ctx.globalAlpha = 0.08
+      ctx.fillRect(marquee.l, marquee.t, marquee.r - marquee.l, marquee.b - marquee.t)
+      ctx.globalAlpha = 1
+      ctx.strokeStyle = tc.selection
+      ctx.lineWidth = 1 / zoom
+      ctx.setLineDash([4 / zoom, 3 / zoom])
+      ctx.strokeRect(marquee.l, marquee.t, marquee.r - marquee.l, marquee.b - marquee.t)
+      ctx.restore()
     }
 
     ctx.restore()
-  }, [shapes, lines, freeLines, texts, draft, panX, panY, zoom, selection, connecting, theme, routeFreeze])
+  }, [shapes, lines, freeLines, texts, draft, panX, panY, zoom, selection, connecting, theme, routeFreeze, marquee])
 
   useEffect(() => {
     const frameId = requestAnimationFrame(render)
@@ -657,33 +735,16 @@ export default function DiagramCanvas() {
       return
     }
 
-    // Select tool — text boxes (drawn on top) first, then shapes, then lines
-    const hitText = findHitText(texts, cp.x, cp.y)
-    if (hitText) {
-      selectText(hitText.id)
-      return
-    }
-
-    const hitShape = findHitShape(shapes, cp.x, cp.y)
-    if (hitShape) {
-      selectShape(hitShape.id)
-      return
-    }
-
-    const hitLine = findHitLine(lines, shapes, cp.x, cp.y)
-    if (hitLine) {
-      selectLine(hitLine.id)
-      return
-    }
-
-    const hitFreeLine = findHitFreeLine(freeLines, cp.x, cp.y)
-    if (hitFreeLine) {
-      selectFreeLine(hitFreeLine.id)
-      return
-    }
-
-    clearSelection()
-  }, [activeTool, shapes, lines, freeLines, texts, editing, screenToCanvas, addShape, addText, selectShape, selectLine, selectFreeLine, selectText, startEditingText, clearSelection, startConnecting])
+    // Select tool — text boxes (drawn on top) first, then shapes, then lines.
+    // Shift / Ctrl / Cmd adds or removes the item instead of replacing the selection.
+    const additive = e.shiftKey || e.ctrlKey || e.metaKey
+    const hitId = findHitText(texts, cp.x, cp.y)?.id
+      ?? findHitShape(shapes, cp.x, cp.y)?.id
+      ?? findHitLine(lines, shapes, cp.x, cp.y)?.id
+      ?? findHitFreeLine(freeLines, cp.x, cp.y)?.id
+    if (hitId) select([hitId], additive ? 'toggle' : 'replace')
+    else if (!additive) clearSelection()
+  }, [activeTool, shapes, lines, freeLines, texts, editing, screenToCanvas, addShape, addText, select, startEditingText, clearSelection, startConnecting])
 
   // ── Double-click to edit ──
 
@@ -720,6 +781,7 @@ export default function DiagramCanvas() {
     {
       onDrag: ({ event, delta: [dx, dy], first, xy: [sx, sy], initial: [ix, iy], movement: [mx, my] }) => {
         event.preventDefault()
+        if (pinchingRef.current) return
 
         if (editing) {
           stopEditing()
@@ -735,18 +797,25 @@ export default function DiagramCanvas() {
         if (first) {
           didDragRef.current = false
           freeLineDragRef.current = null
-          textDragRef.current = null
+          moveRef.current = null
+          marqueeRef.current = null
+          isPanningRef.current = false
           drawStartRef.current = null
           const cp = screenToCanvas(ix - rect.left, iy - rect.top)
           pointerStartRef.current = cp
+          const pe = event as PointerEvent
+
+          // Space+drag or the middle button pans; otherwise a drag on empty canvas draws a selection box
+          if (spaceHeldRef.current || (pe.buttons & 4)) {
+            isPanningRef.current = true
+            return
+          }
 
           // Line tool — start drawing at the pointer (snapped to grid if enabled)
           if (activeTool === 'freeLine') {
             const anchor = snapToGrid ? { x: snapValue(cp.x), y: snapValue(cp.y) } : cp
             drawStartRef.current = anchor
             updateDraft({ x1: anchor.x, y1: anchor.y, x2: anchor.x, y2: anchor.y })
-            dragTargetRef.current = null
-            isPanningRef.current = false
             return
           }
 
@@ -756,20 +825,14 @@ export default function DiagramCanvas() {
             if (hit) {
               startConnecting(hit.id)
             }
-            dragTargetRef.current = null
-            isPanningRef.current = !hit
             return
           }
 
-          if (activeTool !== 'select') {
-            dragTargetRef.current = null
-            isPanningRef.current = false
-            return
-          }
+          if (activeTool !== 'select') return
 
-          // Endpoint handles of the selected free line take priority over everything under them
-          if (selection?.type === 'freeLine') {
-            const f = freeLines.find(fl => fl.id === selection.id)
+          // Endpoint handles of a lone selected free line take priority over everything under them
+          if (selection.length === 1) {
+            const f = freeLines.find(fl => fl.id === selection[0])
             const reach = (HANDLE_RADIUS + 5) / zoom
             const mode = !f ? null
               : Math.hypot(cp.x - f.x1, cp.y - f.y1) <= reach ? 'p1'
@@ -777,56 +840,48 @@ export default function DiagramCanvas() {
               : null
             if (f && mode) {
               freeLineDragRef.current = { id: f.id, mode, orig: { ...f } }
-              dragTargetRef.current = null
-              isPanningRef.current = false
               pushMoveHistory()
               return
             }
           }
 
-          const hitText = findHitText(texts, cp.x, cp.y)
-          if (hitText) {
-            selectText(hitText.id)
-            textDragRef.current = { id: hitText.id, origin: { x: hitText.x, y: hitText.y } }
-            dragTargetRef.current = null
-            isPanningRef.current = false
-            pushMoveHistory()
+          const hitId = findHitText(texts, cp.x, cp.y)?.id
+            ?? findHitShape(shapes, cp.x, cp.y)?.id
+            ?? findHitFreeLine(freeLines, cp.x, cp.y)?.id
+          const additive = pe.shiftKey || pe.ctrlKey || pe.metaKey
+          if (!hitId) {
+            marqueeRef.current = { start: cp, end: cp, mode: additive ? 'add' : 'replace' }
             return
           }
 
-          const hit = findHitShape(shapes, cp.x, cp.y)
-          if (!hit) {
-            const hitFree = findHitFreeLine(freeLines, cp.x, cp.y)
-            if (hitFree) {
-              selectFreeLine(hitFree.id)
-              freeLineDragRef.current = { id: hitFree.id, mode: 'move', orig: { ...hitFree } }
-              dragTargetRef.current = null
-              isPanningRef.current = false
-              pushMoveHistory()
-              return
-            }
+          // Dragging an unselected item selects it (and its group); dragging a selected one moves the lot
+          if (additive) select([hitId], 'add')
+          else if (!selection.includes(hitId)) select([hitId])
+          const st = useDiagramStore.getState()
+          const sel = new Set(st.selection)
+          const origins: MoveOrigins = {
+            shapes: new Map(st.shapes.filter(s => sel.has(s.id)).map(s => [s.id, { x: s.x, y: s.y }])),
+            freeLines: new Map(st.freeLines.filter(f => sel.has(f.id)).map(f => [f.id, { ...f }])),
+            texts: new Map(st.texts.filter(t => sel.has(t.id)).map(t => [t.id, { x: t.x, y: t.y }])),
           }
-          if (hit) {
-            selectShape(hit.id)
-            dragTargetRef.current = hit.id
-            dragOriginRef.current = { x: hit.x, y: hit.y }
-            const neighbourIds = new Set(lines.flatMap(l =>
-              l.fromId === hit.id ? [l.toId] : l.toId === hit.id ? [l.fromId] : []))
-            neighbourIds.delete(hit.id)
-            const anchors = shapes.filter(s => neighbourIds.has(s.id))
-              .map(s => ({ x: s.x + s.width / 2, y: s.y + s.height / 2 }))
-            dragAnchorsRef.current = anchors.length > 0
-              ? anchors
-              : [{ x: hit.x + hit.width / 2, y: hit.y + hit.height / 2 }]
-            isPanningRef.current = false
-            pushMoveHistory()
-            if (shapes.length >= FREEZE_ROUTES_MIN_SHAPES) {
-              // Snapshot after selectShape, which replaces the shapes array
-              setRouteFreeze({ shapes: useDiagramStore.getState().shapes, movingId: hit.id })
-            }
+          const centre = (s: Shape) => ({ x: s.x + s.width / 2, y: s.y + s.height / 2 })
+          const grabbedShape = st.shapes.find(s => s.id === hitId)
+          let grab: MoveGrab
+          if (grabbedShape) {
+            // Angle lock is relative to connected shapes that stay put, or to the drag start
+            const neighbourIds = new Set(st.lines.flatMap(l =>
+              l.fromId === hitId ? [l.toId] : l.toId === hitId ? [l.fromId] : []))
+            const anchors = st.shapes.filter(s => neighbourIds.has(s.id) && !origins.shapes.has(s.id)).map(centre)
+            grab = { kind: 'shape', shape: grabbedShape, anchors: anchors.length > 0 ? anchors : [centre(grabbedShape)] }
           } else {
-            dragTargetRef.current = null
-            isPanningRef.current = true
+            const t = st.texts.find(x => x.id === hitId)
+            const f = st.freeLines.find(x => x.id === hitId)
+            grab = { kind: 'point', origin: t ? { x: t.x, y: t.y } : { x: f?.x1 ?? 0, y: f?.y1 ?? 0 } }
+          }
+          moveRef.current = { origins, grab, last: { x: 0, y: 0 } }
+          pushMoveHistory()
+          if (st.shapes.length >= FREEZE_ROUTES_MIN_SHAPES && origins.shapes.size > 0) {
+            setRouteFreeze({ shapes: st.shapes, movingIds: new Set(origins.shapes.keys()) })
           }
           return
         }
@@ -853,10 +908,9 @@ export default function DiagramCanvas() {
           return
         }
 
-        if (textDragRef.current) {
-          const { id, origin } = textDragRef.current
-          const pos = constrainPoint({ x: origin.x + moved.x, y: origin.y + moved.y }, origin, lock, snapToGrid)
-          setTextPosition(id, pos.x, pos.y)
+        if (marqueeRef.current) {
+          marqueeRef.current.end = cur
+          setMarquee(normRect(marqueeRef.current.start, cur))
           return
         }
 
@@ -865,12 +919,7 @@ export default function DiagramCanvas() {
           const p1 = { x: orig.x1, y: orig.y1 }
           const p2 = { x: orig.x2, y: orig.y2 }
           const shift = moved
-          if (mode === 'move') {
-            // Move by the first endpoint so the whole line snaps/locks as a unit
-            const moved = constrainPoint({ x: p1.x + shift.x, y: p1.y + shift.y }, p1, lock, snapToGrid)
-            const ox = moved.x - p1.x, oy = moved.y - p1.y
-            setFreeLinePoints(id, p1.x + ox, p1.y + oy, p2.x + ox, p2.y + oy)
-          } else if (mode === 'p1') {
+          if (mode === 'p1') {
             const q = constrainPoint({ x: p1.x + shift.x, y: p1.y + shift.y }, p2, lock, snapToGrid)
             setFreeLinePoints(id, q.x, q.y, p2.x, p2.y)
           } else {
@@ -880,22 +929,31 @@ export default function DiagramCanvas() {
           return
         }
 
-        if (dragTargetRef.current) {
-          const shape = shapes.find(s => s.id === dragTargetRef.current)
-          if (shape) {
-            // Positions are derived from the drag start each frame so snapping never accumulates drift
-            let pos = { x: dragOriginRef.current.x + moved.x, y: dragOriginRef.current.y + moved.y }
+        if (moveRef.current) {
+          const { origins, grab, last } = moveRef.current
+          // The grabbed item's own snap / angle lock decides the offset; everything else follows it
+          let d: Point
+          if (grab.kind === 'shape') {
+            const s = grab.shape
+            let pos = { x: s.x + moved.x, y: s.y + moved.y }
             if (lock) {
               const c = lockToAngles(
-                { x: pos.x + shape.width / 2, y: pos.y + shape.height / 2 },
-                dragAnchorsRef.current,
+                { x: pos.x + s.width / 2, y: pos.y + s.height / 2 },
+                grab.anchors,
                 snapToGrid ? GRID_SIZE : null,
               )
-              pos = { x: c.x - shape.width / 2, y: c.y - shape.height / 2 }
+              pos = { x: c.x - s.width / 2, y: c.y - s.height / 2 }
             } else if (snapToGrid) {
-              pos = snapShapePosition({ ...shape, ...pos })
+              pos = snapShapePosition({ ...s, ...pos })
             }
-            if (pos.x !== shape.x || pos.y !== shape.y) setShapePosition(shape.id, pos.x, pos.y)
+            d = { x: pos.x - s.x, y: pos.y - s.y }
+          } else {
+            const p = constrainPoint({ x: grab.origin.x + moved.x, y: grab.origin.y + moved.y }, grab.origin, lock, snapToGrid)
+            d = { x: p.x - grab.origin.x, y: p.y - grab.origin.y }
+          }
+          if (d.x !== last.x || d.y !== last.y) {
+            moveRef.current.last = d
+            moveItems(origins, d.x, d.y)
           }
         } else if (isPanningRef.current) {
           // Read the live camera: several pointer events can arrive before this closure is re-created
@@ -905,8 +963,26 @@ export default function DiagramCanvas() {
       },
       onDragEnd: ({ xy: [sx, sy] }) => {
         // Reset drag flag so subsequent clicks aren't blocked
+        const dragged = didDragRef.current
         didDragRef.current = false
         setRouteFreeze(null)
+
+        if (marqueeRef.current) {
+          const { start, end, mode } = marqueeRef.current
+          marqueeRef.current = null
+          setMarquee(null)
+          // The click a mouse drag ends with would otherwise hit empty canvas and clear the selection
+          suppressClickRef.current = true
+          select(idsInRect(normRect(start, end), shapes, lines, freeLines, texts), mode)
+          return
+        }
+
+        if (moveRef.current) {
+          moveRef.current = null
+          // ...or re-select just the grabbed item
+          if (dragged) suppressClickRef.current = true
+          return
+        }
 
         if (drawStartRef.current) {
           drawStartRef.current = null
@@ -925,11 +1001,6 @@ export default function DiagramCanvas() {
           return
         }
 
-        if (textDragRef.current) {
-          textDragRef.current = null
-          return
-        }
-
         if (connecting) {
           const canvasEl = canvasRef.current
           if (!canvasEl) {
@@ -943,9 +1014,28 @@ export default function DiagramCanvas() {
           return
         }
       },
-      onPinch: ({ offset: [scale], origin: [ox, oy] }) => {
+      onPinchStart: () => {
+        // A second finger turns a one-finger drag into pan/zoom: drop the selection box, stop moving
+        pinchingRef.current = true
+        marqueeRef.current = null
+        setMarquee(null)
+        moveRef.current = null
+        setRouteFreeze(null)
+      },
+      onPinchEnd: () => {
+        pinchingRef.current = false
+      },
+      onPinch: ({ offset: [scale], origin: [ox, oy], first, memo }) => {
         const rect = canvasRef.current?.getBoundingClientRect()
-        if (rect) zoomAt(ox - rect.left, oy - rect.top, scale)
+        if (!rect) return memo
+        const sx = ox - rect.left, sy = oy - rect.top
+        // Two fingers also pan: the canvas follows the point between them
+        if (!first && memo) {
+          const cam = useDiagramStore.getState()
+          setPan(cam.panX + sx - memo[0], cam.panY + sy - memo[1])
+        }
+        zoomAt(sx, sy, scale)
+        return [sx, sy]
       },
       onWheel: ({ event, delta: [, dy] }) => {
         const rect = canvasRef.current?.getBoundingClientRect()
@@ -954,7 +1044,8 @@ export default function DiagramCanvas() {
     },
     {
       target: canvasRef,
-      drag: { filterTaps: true },
+      // Left button drags select/move; the middle button pans
+      drag: { filterTaps: true, pointer: { buttons: [1, 4] } },
       // Start each pinch from the store's zoom, which the wheel also changes
       pinch: { scaleBounds: { min: 0.1, max: 5 }, from: () => [useDiagramStore.getState().zoom, 0] },
       eventOptions: { passive: false },
@@ -970,6 +1061,7 @@ export default function DiagramCanvas() {
           cancelConnecting()
           return
         }
+        useDiagramStore.getState().clearSelection()
       }
       if (e.key === 'Delete' || e.key === 'Backspace') {
         const active = document.activeElement
@@ -980,6 +1072,25 @@ export default function DiagramCanvas() {
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [connecting, cancelConnecting])
+
+  // Space held over the canvas turns drags into pans (desktop equivalent of two-finger panning)
+  useEffect(() => {
+    const onCanvas = () => document.activeElement === document.body || document.activeElement === canvasRef.current
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' || !onCanvas()) return
+      spaceHeldRef.current = true
+      e.preventDefault()
+    }
+    const up = (e: KeyboardEvent) => {
+      if (e.code === 'Space') spaceHeldRef.current = false
+    }
+    window.addEventListener('keydown', down)
+    window.addEventListener('keyup', up)
+    return () => {
+      window.removeEventListener('keydown', down)
+      window.removeEventListener('keyup', up)
+    }
+  }, [])
 
   const cursor = (() => {
     if (connecting) return 'crosshair'
@@ -1005,6 +1116,8 @@ export default function DiagramCanvas() {
         ref={canvasRef}
         // A touch drag produces no click to consume the suppression flag, so a new press clears it
         onPointerDown={() => { suppressClickRef.current = false }}
+        // Stop the middle button's autoscroll so it can pan
+        onMouseDown={e => { if (e.button === 1) e.preventDefault() }}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         style={{

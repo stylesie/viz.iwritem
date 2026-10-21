@@ -58,6 +58,12 @@ function bool(o: Obj, key: string, where: string, fallback: boolean): boolean {
   return v
 }
 
+/** Optional group id; missing or empty means ungrouped */
+function groupId(o: Obj, where: string): { groupId?: string } {
+  const v = str(o, 'groupId', where)
+  return v ? { groupId: v } : {}
+}
+
 function color(o: Obj, key: string, where: string): string {
   const v = o[key]
   if (!isSafeColor(v)) fail(where, `${key} is not a valid colour`)
@@ -94,7 +100,7 @@ function parseShape(v: unknown, where: string): Shape {
     headerIconAlign: iconAlign(o, 'headerIconAlign', where),
     bodyIconAlign: iconAlign(o, 'bodyIconAlign', where),
     footerIconAlign: iconAlign(o, 'footerIconAlign', where),
-    selected: false,
+    ...groupId(o, where),
   }
 }
 
@@ -119,6 +125,7 @@ function parseFreeLine(v: unknown, where: string): FreeLine {
     x2: num(o, 'x2', where),
     y2: num(o, 'y2', where),
     color: color(o, 'color', where),
+    ...groupId(o, where),
   }
 }
 
@@ -132,6 +139,7 @@ function parseTextBox(v: unknown, where: string): TextBox {
     scale: num(o, 'scale', where, true),
     bold: bool(o, 'bold', where, false),
     color: color(o, 'color', where),
+    ...groupId(o, where),
   }
 }
 

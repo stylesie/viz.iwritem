@@ -1,6 +1,6 @@
 import { useDiagramStore } from '../../store/diagramStore'
 import type { TextZone, IconAlign } from '../../store/diagramStore'
-import type { ShapeType } from '../../core/model'
+import type { ShapeType, Shape, TextBox } from '../../core/model'
 import { AUTO_COLOR } from '../../core/model'
 import { TEXT_SIZES } from '../../core/textBox'
 import { SHAPE_TOOLS } from '../shapeTypes'
@@ -118,22 +118,27 @@ function ShapeProperties() {
   const updateShapeIconAlign = useDiagramStore(s => s.updateShapeIconAlign)
   const setShapeDefault = useDiagramStore(s => s.setShapeDefault)
 
-  if (!selection || selection.type !== 'shape') return null
-  const shape = shapes.find(s => s.id === selection.id)
-  if (!shape) return null
-
-  const shapeType = shape.type as ShapeType
+  const selected = shapes.filter(s => selection.includes(s.id))
+  if (selected.length === 0) return null
+  // Controls show the first shape's values; a swatch is highlighted only when every selected shape shares it
+  const shape = selected[0]
+  const ids = selected.map(s => s.id)
+  const common = <K extends keyof Shape>(key: K) => (selected.every(s => s[key] === shape[key]) ? shape[key] : undefined)
+  const setDefault = (colors: Partial<Record<'fillColor' | 'strokeColor' | 'textColor', string>>) => {
+    for (const type of new Set(selected.map(s => s.type as ShapeType))) setShapeDefault(type, colors)
+  }
 
   return (
-    <div className="property-panel">
+    <>
+      <GroupTitle count={selected.length} one="shape" many="shapes" />
       <div className="prop-section">
         <div className="prop-label">Shape</div>
         <div className="icon-grid">
           {SHAPE_TOOLS.map(({ type, label, icon }) => (
             <button
               key={`type-${type}`}
-              className={`icon-btn ${shape.type === type ? 'selected' : ''}`}
-              onClick={() => changeShapeType(shape.id, type)}
+              className={`icon-btn ${common('type') === type ? 'selected' : ''}`}
+              onClick={() => changeShapeType(ids, type)}
               title={`Change to ${label}`}
             >
               {icon}
@@ -149,8 +154,8 @@ function ShapeProperties() {
             <ColorSwatch
               key={`fill-${c}`}
               color={c}
-              selected={shape.fillColor === c}
-              onClick={() => updateShapeColors(shape.id, { fillColor: c })}
+              selected={common('fillColor') === c}
+              onClick={() => updateShapeColors(ids, { fillColor: c })}
             />
           ))}
         </div>
@@ -159,10 +164,10 @@ function ShapeProperties() {
             type="color"
             className="color-input"
             value={shape.fillColor}
-            onChange={e => updateShapeColors(shape.id, { fillColor: e.target.value })}
+            onChange={e => updateShapeColors(ids, { fillColor: e.target.value })}
           />
         )}
-        <SetDefaultButton onClick={() => setShapeDefault(shapeType, { fillColor: shape.fillColor })} />
+        <SetDefaultButton onClick={() => setDefault({ fillColor: shape.fillColor })} />
       </div>
 
       <div className="prop-section">
@@ -172,8 +177,8 @@ function ShapeProperties() {
             <ColorSwatch
               key={`stroke-${c}`}
               color={c}
-              selected={shape.strokeColor === c}
-              onClick={() => updateShapeColors(shape.id, { strokeColor: c })}
+              selected={common('strokeColor') === c}
+              onClick={() => updateShapeColors(ids, { strokeColor: c })}
             />
           ))}
         </div>
@@ -182,10 +187,10 @@ function ShapeProperties() {
             type="color"
             className="color-input"
             value={shape.strokeColor}
-            onChange={e => updateShapeColors(shape.id, { strokeColor: e.target.value })}
+            onChange={e => updateShapeColors(ids, { strokeColor: e.target.value })}
           />
         )}
-        <SetDefaultButton onClick={() => setShapeDefault(shapeType, { strokeColor: shape.strokeColor })} />
+        <SetDefaultButton onClick={() => setDefault({ strokeColor: shape.strokeColor })} />
       </div>
 
       <div className="prop-section">
@@ -195,8 +200,8 @@ function ShapeProperties() {
             <ColorSwatch
               key={`text-${c}`}
               color={c}
-              selected={shape.textColor === c}
-              onClick={() => updateShapeColors(shape.id, { textColor: c })}
+              selected={common('textColor') === c}
+              onClick={() => updateShapeColors(ids, { textColor: c })}
             />
           ))}
         </div>
@@ -205,19 +210,19 @@ function ShapeProperties() {
             type="color"
             className="color-input"
             value={shape.textColor}
-            onChange={e => updateShapeColors(shape.id, { textColor: e.target.value })}
+            onChange={e => updateShapeColors(ids, { textColor: e.target.value })}
           />
         )}
-        <SetDefaultButton onClick={() => setShapeDefault(shapeType, { textColor: shape.textColor })} />
+        <SetDefaultButton onClick={() => setDefault({ textColor: shape.textColor })} />
       </div>
 
       <div className="prop-section">
         <div className="prop-label">Icons</div>
         {ICON_ZONES.map(({ zone, label }) => {
-          const iconKey = `${zone}Icon` as keyof typeof shape
-          const alignKey = `${zone}IconAlign` as keyof typeof shape
-          const currentIcon = shape[iconKey] as string
-          const currentAlign = (shape[alignKey] as IconAlign) || 'left'
+          const iconKey = `${zone}Icon` as const
+          const alignKey = `${zone}IconAlign` as const
+          const currentIcon = common(iconKey)
+          const currentAlign: IconAlign | undefined = common(alignKey)
           return (
             <div key={zone} className="icon-zone-row">
               <div className="icon-zone-header">
@@ -228,7 +233,7 @@ function ShapeProperties() {
                       <button
                         key={`${zone}-align-${value}`}
                         className={`icon-align-btn ${currentAlign === value ? 'selected' : ''}`}
-                        onClick={() => updateShapeIconAlign(shape.id, zone, value)}
+                        onClick={() => updateShapeIconAlign(ids, zone, value)}
                         title={alignLabel}
                       >
                         {symbol}
@@ -242,7 +247,7 @@ function ShapeProperties() {
                   <button
                     key={`${zone}-${iconLabel}`}
                     className={`icon-btn ${currentIcon === icon ? 'selected' : ''}`}
-                    onClick={() => updateShapeIcon(shape.id, zone, icon)}
+                    onClick={() => updateShapeIcon(ids, zone, icon)}
                     title={iconLabel}
                   >
                     {icon || '\u2013'}
@@ -253,7 +258,7 @@ function ShapeProperties() {
           )
         })}
       </div>
-    </div>
+    </>
   )
 }
 
@@ -265,14 +270,15 @@ function LineProperties() {
   const setLineDefault = useDiagramStore(s => s.setLineDefault)
 
   // Connectors and free lines share the line colour controls and default
-  if (!selection || (selection.type !== 'line' && selection.type !== 'freeLine')) return null
-  const line = selection.type === 'line'
-    ? lines.find(l => l.id === selection.id)
-    : freeLines.find(f => f.id === selection.id)
-  if (!line) return null
+  const selected = [...lines, ...freeLines].filter(l => selection.includes(l.id))
+  if (selected.length === 0) return null
+  const line = selected[0]
+  const ids = selected.map(l => l.id)
+  const commonColor = selected.every(l => l.color === line.color) ? line.color : undefined
 
   return (
-    <div className="property-panel">
+    <>
+      <GroupTitle count={selected.length} one="line" many="lines" />
       <div className="prop-section">
         <div className="prop-label">Line Colour</div>
         <div className="color-grid">
@@ -280,8 +286,8 @@ function LineProperties() {
             <ColorSwatch
               key={`line-${c}`}
               color={c}
-              selected={line.color === c}
-              onClick={() => updateLineColor(line.id, c)}
+              selected={commonColor === c}
+              onClick={() => updateLineColor(ids, c)}
             />
           ))}
         </div>
@@ -290,12 +296,12 @@ function LineProperties() {
             type="color"
             className="color-input"
             value={line.color}
-            onChange={e => updateLineColor(line.id, e.target.value)}
+            onChange={e => updateLineColor(ids, e.target.value)}
           />
         )}
         <SetDefaultButton onClick={() => setLineDefault({ color: line.color })} />
       </div>
-    </div>
+    </>
   )
 }
 
@@ -305,28 +311,31 @@ function TextProperties() {
   const updateTextStyle = useDiagramStore(s => s.updateTextStyle)
   const setTextDefault = useDiagramStore(s => s.setTextDefault)
 
-  if (!selection || selection.type !== 'text') return null
-  const t = texts.find(x => x.id === selection.id)
-  if (!t) return null
+  const selected = texts.filter(x => selection.includes(x.id))
+  if (selected.length === 0) return null
+  const t = selected[0]
+  const ids = selected.map(x => x.id)
+  const common = <K extends keyof TextBox>(key: K) => (selected.every(x => x[key] === t[key]) ? t[key] : undefined)
 
   return (
-    <div className="property-panel">
+    <>
+      <GroupTitle count={selected.length} one="text" many="texts" />
       <div className="prop-section">
         <div className="prop-label">Size</div>
         <div className="text-size-row">
           {TEXT_SIZES.map(({ label, scale }) => (
             <button
               key={label}
-              className={`text-size-btn ${t.scale === scale ? 'selected' : ''}`}
-              onClick={() => updateTextStyle(t.id, { scale })}
+              className={`text-size-btn ${common('scale') === scale ? 'selected' : ''}`}
+              onClick={() => updateTextStyle(ids, { scale })}
               title={`${scale}\u00D7 normal text size`}
             >
               {label}
             </button>
           ))}
           <button
-            className={`text-size-btn bold ${t.bold ? 'selected' : ''}`}
-            onClick={() => updateTextStyle(t.id, { bold: !t.bold })}
+            className={`text-size-btn bold ${common('bold') ? 'selected' : ''}`}
+            onClick={() => updateTextStyle(ids, { bold: !common('bold') })}
             title="Bold"
           >
             B
@@ -341,8 +350,8 @@ function TextProperties() {
             <ColorSwatch
               key={`textbox-${c}`}
               color={c}
-              selected={t.color === c}
-              onClick={() => updateTextStyle(t.id, { color: c })}
+              selected={common('color') === c}
+              onClick={() => updateTextStyle(ids, { color: c })}
             />
           ))}
         </div>
@@ -351,7 +360,7 @@ function TextProperties() {
             type="color"
             className="color-input"
             value={t.color}
-            onChange={e => updateTextStyle(t.id, { color: e.target.value })}
+            onChange={e => updateTextStyle(ids, { color: e.target.value })}
           />
         )}
       </div>
@@ -363,19 +372,26 @@ function TextProperties() {
       >
         Set as Default
       </button>
-    </div>
+    </>
   )
+}
+
+/** Heading for a kind of item, shown once more than one item is selected */
+function GroupTitle({ count, one, many }: { count: number; one: string; many: string }) {
+  const total = useDiagramStore(s => s.selection.length)
+  if (total < 2) return null
+  return <div className="prop-group-title">{count} {count === 1 ? one : many}</div>
 }
 
 export default function PropertyPanel() {
   const selection = useDiagramStore(s => s.selection)
-  if (!selection) return null
+  if (selection.length === 0) return null
 
   return (
-    <>
+    <div className="property-panel">
       <ShapeProperties />
       <LineProperties />
       <TextProperties />
-    </>
+    </div>
   )
 }

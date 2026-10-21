@@ -140,6 +140,9 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: Fr
 
   // Map shape IDs to excalidraw element IDs
   const shapeIdMap = new Map<string, string>()
+  // Our groups map one-to-one onto Excalidraw's groupIds
+  const groupIds = (groupId?: string) => (groupId ? [groupId] : [])
+  const shapeGroup = new Map(shapes.map(s => [s.id, s.groupId]))
 
   // Create shape elements
   for (const shape of shapes) {
@@ -159,6 +162,7 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: Fr
       strokeColor: shape.strokeColor,
       backgroundColor: shape.fillColor,
       fillStyle: 'solid',
+      groupIds: groupIds(shape.groupId),
       boundElements: textId
         ? [{ id: textId, type: 'text' }]
         : null,
@@ -178,6 +182,7 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: Fr
           height: shape.height - 20,
           strokeColor: shape.textColor,
           backgroundColor: 'transparent',
+          groupIds: groupIds(shape.groupId),
         }),
         type: 'text',
         text: fullText,
@@ -206,6 +211,9 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: Fr
     const fromPt = pts[0]
 
     const arrowId = makeId()
+    // A connector inside one group belongs to it
+    const fromGroup = shapeGroup.get(line.fromId)
+    const lineGroups = groupIds(fromGroup === shapeGroup.get(line.toId) ? fromGroup : undefined)
 
     // Also add arrow as boundElement on the shapes
     const fromEl = elements.find(e => e.id === fromExId)
@@ -233,6 +241,7 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: Fr
         height: Math.max(...ysRel) - Math.min(...ysRel),
         strokeColor: line.color,
         backgroundColor: 'transparent',
+        groupIds: lineGroups,
       }),
       type: 'arrow',
       points: relPts,
@@ -270,6 +279,7 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: Fr
           height: 24,
           strokeColor: line.color,
           backgroundColor: 'transparent',
+          groupIds: lineGroups,
         }),
         type: 'text',
         text: line.label,
@@ -301,6 +311,7 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: Fr
         height: Math.abs(dy),
         strokeColor: f.color,
         backgroundColor: 'transparent',
+        groupIds: groupIds(f.groupId),
       }),
       type: 'line',
       points: [[0, 0], [dx, dy]],
@@ -328,6 +339,7 @@ export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: Fr
         height,
         strokeColor: t.color,
         backgroundColor: 'transparent',
+        groupIds: groupIds(t.groupId),
       }),
       type: 'text',
       text: t.text,

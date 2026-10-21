@@ -49,6 +49,15 @@ Connected shapes are automatically arranged using ELK.js when you add or remove 
 
 **Arrange** -- Click Arrange to manually trigger a re-layout. If layout is locked, you'll get a confirmation prompt since this overwrites manual positions. Arrange is undoable.
 
+### Selecting and Grouping
+- **Select** -- Click (or tap) an item. **Shift**-, **Ctrl**- or **Cmd**-click adds or removes it.
+- **Selection box** -- Drag on empty canvas to select everything wholly inside the box (a connector is included when both its shapes are). Hold Shift to add to the current selection.
+- **Select all** -- `Ctrl+A`.
+- **Move** -- Drag any selected item to move the whole selection. Grid and Angle apply to the item you grab.
+- **Edit together** -- With several items selected, the panel on the right changes all of them: colours, shape type and icons for shapes, colour for lines, size and colour for text. A swatch is highlighted only when every selected item already uses it.
+- **Group** -- Select shapes, lines and text, then press **Group** (`Ctrl+G`). Clicking any member selects the whole group, and a dashed outline shows it. With a single group selected the button becomes **Ungroup** (`Ctrl+Shift+G`). Grouping items that are already in groups merges them.
+- **Groups and auto-layout** -- A group whose shapes are connected is laid out as one cluster, so its members stay together. Lines and text in the group move with the nearest shape in it.
+
 ### Styling
 Select a shape or line to open the property panel on the right:
 
@@ -78,11 +87,16 @@ Each "Set as Default" button saves the current color as the default for that sha
 | `Delete` / `Backspace` | Delete selected |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Shift+Z` | Redo |
-| `Escape` | Cancel connection |
+| `Escape` | Cancel connection, or clear the selection |
+| `Ctrl+A` | Select everything |
+| `Ctrl+G` | Group the selection |
+| `Ctrl+Shift+G` | Ungroup the selection |
+| `Shift` / `Ctrl` + click | Add to or remove from the selection |
+| `Space` + drag | Pan |
 
 ### Navigation
-- **Pan** -- Drag on empty canvas
-- **Zoom** -- Scroll wheel or pinch gesture
+- **Pan** -- Drag with two fingers, drag with the middle mouse button, or hold `Space` and drag. (A one-finger or left-button drag on empty canvas draws a selection box.)
+- **Zoom** -- Scroll wheel or pinch gesture, centred on the pointer or fingers
 - **Move shapes** -- Drag a shape
 
 ### File Operations

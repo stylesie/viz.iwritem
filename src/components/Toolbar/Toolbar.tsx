@@ -150,7 +150,17 @@ export default function Toolbar() {
   const angleLock = useDiagramStore(s => s.angleLock)
   const toggleAngleLock = useDiagramStore(s => s.toggleAngleLock)
   const lines = useDiagramStore(s => s.lines)
-  const hasSelection = selection !== null
+  const hasSelection = selection.length > 0
+  const groupSelection = useDiagramStore(s => s.groupSelection)
+  const ungroupSelection = useDiagramStore(s => s.ungroupSelection)
+  // Shapes, lines and text boxes can be grouped (connectors follow their shapes). One button:
+  // Ungroup when the selection is exactly one group, otherwise Group (which merges any groups in it)
+  const groupState = useDiagramStore(s => {
+    const sel = new Set(s.selection)
+    const picked = [...s.shapes, ...s.freeLines, ...s.texts].filter(el => sel.has(el.id))
+    if (picked.length > 0 && picked[0].groupId && picked.every(el => el.groupId === picked[0].groupId)) return 'ungroup'
+    return picked.length >= 2 ? 'group' : 'none'
+  })
 
   const handleToolClick = (tool: Tool) => {
     setTool(tool === activeTool ? 'select' : tool)
@@ -249,6 +259,15 @@ export default function Toolbar() {
         >
           <span className="tool-icon">{'\u2715'}</span>
           <span className="tool-label">Delete</span>
+        </button>
+        <button
+          className="tool-btn"
+          onClick={groupState === 'ungroup' ? ungroupSelection : groupSelection}
+          disabled={groupState === 'none'}
+          title={groupState === 'ungroup' ? 'Ungroup (Ctrl+Shift+G)' : 'Group: select, move and lay out together (Ctrl+G)'}
+        >
+          <span className="tool-icon">{'\u29C9'}</span>
+          <span className="tool-label">{groupState === 'ungroup' ? 'Ungroup' : 'Group'}</span>
         </button>
       </div>
 
