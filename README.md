@@ -18,6 +18,8 @@ Nine shape types: Rectangle, Ellipse, Diamond, Triangle, Parallelogram, Rounded 
 
 Click a shape tool in the toolbar, then click on the canvas to place it. Double-click a shape to edit its text.
 
+To change a shape into another type, select it and pick the new type under **Shape** in the panel on the right. Its text, colours, icons and connections are kept, and it resizes around its centre to fit the text.
+
 Each shape has three text zones: **header**, **body**, and **footer**. Double-click opens the body zone by default.
 
 ### Connections

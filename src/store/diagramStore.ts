@@ -125,6 +125,7 @@ interface DiagramState {
 
   // Colour / icon actions
   updateShapeColors: (id: string, colors: { fillColor?: string; strokeColor?: string; textColor?: string }) => void
+  changeShapeType: (id: string, type: ShapeType) => void
   updateShapeIcon: (id: string, zone: TextZone, icon: string) => void
   updateShapeIconAlign: (id: string, zone: TextZone, align: IconAlign) => void
   updateLineColor: (id: string, color: string) => void
@@ -447,6 +448,24 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       debouncedAutoSave()
       return { shapes: newShapes }
     })
+  },
+
+  /** Turn a shape into another type, keeping its text, colours, icons and connectors */
+  changeShapeType: (id, type) => {
+    const shape = get().shapes.find(s => s.id === id)
+    if (!shape || shape.type === type) return
+    pushHistory(get, set)
+    set((state) => {
+      const newShapes = state.shapes.map(s => {
+        if (s.id !== id) return s
+        // Re-fit around the same centre: some types need more room for the same text
+        const updated = { ...s, type }
+        return { ...updated, ...autoResizeShape(updated) }
+      })
+      debouncedAutoSave()
+      return { shapes: newShapes }
+    })
+    get().triggerLayout()
   },
 
   updateShapeIcon: (id, zone, icon) => {

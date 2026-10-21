@@ -94,7 +94,7 @@ npm run dev           # Dev server with HMR
 The ELK.js chunk is ~1.4MB (450KB gzipped). It's loaded lazily on first layout trigger.
 
 ## Conventions
-- No morphing -- shape type is fixed after creation
+- Shapes can change type (`changeShapeType()`, from the property panel). The shape keeps its id, so connectors stay attached; it is re-fitted with `autoResizeShape()` around its centre (some types need extra text padding) and layout re-runs. Colours are kept rather than switching to the new type's defaults
 - Old shape types (`square`, `circle`, `oval`) are migrated to `rectangle`/`ellipse` on file load
 - Shape IDs use format `el_{counter}_{timestamp_base36}`
 - History is capped at 50 entries; undo/redo operates on full shapes + lines + freeLines + texts snapshots. `pushHistory()` records the pre-action state; `history[historyIndex]` is what undo restores next, and the present state is appended on the first undo so redo can return to it

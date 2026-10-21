@@ -2,6 +2,7 @@ import { useDiagramStore } from '../../store/diagramStore'
 import type { TextZone, IconAlign } from '../../store/diagramStore'
 import type { ShapeType } from '../../core/model'
 import { TEXT_SIZES } from '../../core/textBox'
+import { SHAPE_TOOLS } from '../shapeTypes'
 import './PropertyPanel.css'
 
 const PALETTE = [
@@ -110,6 +111,7 @@ function ShapeProperties() {
   const selection = useDiagramStore(s => s.selection)
   const shapes = useDiagramStore(s => s.shapes)
   const updateShapeColors = useDiagramStore(s => s.updateShapeColors)
+  const changeShapeType = useDiagramStore(s => s.changeShapeType)
   const updateShapeIcon = useDiagramStore(s => s.updateShapeIcon)
   const updateShapeIconAlign = useDiagramStore(s => s.updateShapeIconAlign)
   const setShapeDefault = useDiagramStore(s => s.setShapeDefault)
@@ -122,6 +124,22 @@ function ShapeProperties() {
 
   return (
     <div className="property-panel">
+      <div className="prop-section">
+        <div className="prop-label">Shape</div>
+        <div className="icon-grid">
+          {SHAPE_TOOLS.map(({ type, label, icon }) => (
+            <button
+              key={`type-${type}`}
+              className={`icon-btn ${shape.type === type ? 'selected' : ''}`}
+              onClick={() => changeShapeType(shape.id, type)}
+              title={`Change to ${label}`}
+            >
+              {icon}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div className="prop-section">
         <div className="prop-label">Fill</div>
         <div className="color-grid">
