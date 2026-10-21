@@ -1,4 +1,5 @@
-import { useRef, useEffect } from 'react'
+import { useRef, useEffect, useLayoutEffect } from 'react'
+import type { RefObject } from 'react'
 import { useDiagramStore } from '../../store/diagramStore'
 import type { TextZone } from '../../store/diagramStore'
 import { HEADER_FONT, BODY_FONT, FOOTER_FONT } from '../../core/autoResize'
@@ -12,6 +13,34 @@ const ZONE_CONFIG: Record<TextZone, { label: string; font: string; placeholder: 
 }
 
 const ZONES: TextZone[] = ['header', 'body', 'footer']
+
+const EDGE_MARGIN = 8
+const ANCHOR_GAP = 12
+
+type Placement = (width: number, height: number, areaWidth: number, areaHeight: number) => { left: number; top: number }
+
+/**
+ * Puts an editor panel where `place` wants it (which can flip sides once the panel's size is
+ * known), clamped inside the canvas area so editors near the edge stay reachable. Runs after
+ * every render, since pan, zoom and typing all move the anchor.
+ */
+function usePanelPlacement(ref: RefObject<HTMLDivElement | null>, place: Placement) {
+  useLayoutEffect(() => {
+    const el = ref.current
+    const area = el?.offsetParent as HTMLElement | null
+    if (!el || !area) return
+    const { offsetWidth: w, offsetHeight: h } = el
+    const { clientWidth: areaW, clientHeight: areaH } = area
+    const { left, top } = place(w, h, areaW, areaH)
+    el.style.left = `${Math.max(EDGE_MARGIN, Math.min(left, areaW - w - EDGE_MARGIN))}px`
+    el.style.top = `${Math.max(EDGE_MARGIN, Math.min(top, areaH - h - EDGE_MARGIN))}px`
+  })
+}
+
+/** Right of the anchor span [start, end], or left of it if the right side has no room */
+function besideX(start: number, end: number, width: number, areaWidth: number): number {
+  return end + ANCHOR_GAP + width <= areaWidth - EDGE_MARGIN ? end + ANCHOR_GAP : start - ANCHOR_GAP - width
+}
 
 function ShapeTextEditor() {
   const editing = useDiagramStore(s => s.editing)
@@ -31,6 +60,11 @@ function ShapeTextEditor() {
 
   const shape = editing ? shapes.find(s => s.id === editing.shapeId) : null
 
+  usePanelPlacement(panelRef, (w, _h, areaW) => {
+    const screenX = (shape?.x ?? 0) * zoom + panX
+    return { left: besideX(screenX, screenX + (shape?.width ?? 0) * zoom, w, areaW), top: (shape?.y ?? 0) * zoom + panY }
+  })
+
   useEffect(() => {
     if (shape && editing) {
       requestAnimationFrame(() => {
@@ -44,12 +78,6 @@ function ShapeTextEditor() {
   }, [editing?.shapeId, editing?.zone]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!editing || !shape) return null
-
-  const screenX = shape.x * zoom + panX
-  const screenY = shape.y * zoom + panY
-  const screenW = shape.width * zoom
-  const panelLeft = screenX + screenW + 12
-  const panelTop = screenY
 
   const handleChange = (zone: TextZone, value: string) => {
     updateShapeText(shape.id, zone, value)
@@ -73,7 +101,6 @@ function ShapeTextEditor() {
     <div
       ref={panelRef}
       className="text-editor-panel"
-      style={{ left: panelLeft, top: panelTop }}
       onKeyDown={handleKeyDown}
       onBlur={handleBlur}
     >
@@ -117,6 +144,12 @@ function LineTextEditor() {
   const fromShape = line ? shapes.find(s => s.id === line.fromId) : null
   const toShape = line ? shapes.find(s => s.id === line.toId) : null
 
+  // Midpoint between the two shape centres
+  const centre = (s: typeof fromShape) => ({ x: s ? s.x + s.width / 2 : 0, y: s ? s.y + s.height / 2 : 0 })
+  const screenMidX = ((centre(fromShape).x + centre(toShape).x) / 2) * zoom + panX
+  const screenMidY = ((centre(fromShape).y + centre(toShape).y) / 2) * zoom + panY
+  usePanelPlacement(panelRef, (w, _h, areaW) => ({ left: besideX(screenMidX, screenMidX, w, areaW), top: screenMidY - 20 }))
+
   useEffect(() => {
     if (line) {
       requestAnimationFrame(() => {
@@ -127,12 +160,6 @@ function LineTextEditor() {
   }, [editingLine?.lineId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!editingLine || !line || !fromShape || !toShape) return null
-
-  // Position at midpoint of the line
-  const midX = ((fromShape.x + fromShape.width / 2) + (toShape.x + toShape.width / 2)) / 2
-  const midY = ((fromShape.y + fromShape.height / 2) + (toShape.y + toShape.height / 2)) / 2
-  const screenMidX = midX * zoom + panX
-  const screenMidY = midY * zoom + panY
 
   const handleChange = (value: string) => {
     updateLineLabel(line.id, value)
@@ -156,7 +183,6 @@ function LineTextEditor() {
     <div
       ref={panelRef}
       className="text-editor-panel"
-      style={{ left: screenMidX + 12, top: screenMidY - 20 }}
       onKeyDown={handleKeyDown}
       onBlur={handleBlur}
     >
@@ -185,9 +211,18 @@ function TextBoxEditor() {
   const updateTextContent = useDiagramStore(s => s.updateTextContent)
   const stopEditingText = useDiagramStore(s => s.stopEditingText)
 
+  const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   const textBox = editingText ? texts.find(t => t.id === editingText.id) : null
+
+  // Just below the text so it stays visible while typing, or above it if there's no room
+  usePanelPlacement(panelRef, (_w, h, _areaW, areaH) => {
+    if (!textBox) return { left: 0, top: 0 }
+    const textTop = textBox.y * zoom + panY
+    const below = (textBox.y + layoutTextBox(textBox).height) * zoom + panY + ANCHOR_GAP
+    return { left: textBox.x * zoom + panX, top: below + h <= areaH - EDGE_MARGIN ? below : textTop - ANCHOR_GAP - h }
+  })
 
   useEffect(() => {
     if (!editingText) return
@@ -198,11 +233,6 @@ function TextBoxEditor() {
   }, [editingText?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!editingText || !textBox) return null
-
-  // Sit just below the text so it stays visible while typing
-  const { height } = layoutTextBox(textBox)
-  const left = textBox.x * zoom + panX
-  const top = (textBox.y + height) * zoom + panY + 12
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     // Enter finishes; Shift+Enter adds a line
@@ -215,8 +245,8 @@ function TextBoxEditor() {
 
   return (
     <div
+      ref={panelRef}
       className="text-editor-panel"
-      style={{ left, top }}
       onKeyDown={handleKeyDown}
     >
       <div className="text-editor-title">Edit Text</div>

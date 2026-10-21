@@ -4,35 +4,20 @@ import { layoutTextBox } from '../core/textBox'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../core/autoResize'
 import { getPolygonVertices } from '../utils/geometry'
 import { routeLine, polylineMidpoint } from '../core/routing'
-
-const EXPORT_PADDING = 40
-
-function getBounds(shapes: Shape[], freeLines: FreeLine[], texts: TextBox[]): { minX: number; minY: number; maxX: number; maxY: number } {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const s of shapes) {
-    minX = Math.min(minX, s.x)
-    minY = Math.min(minY, s.y)
-    maxX = Math.max(maxX, s.x + s.width)
-    maxY = Math.max(maxY, s.y + s.height)
-  }
-  for (const f of freeLines) {
-    minX = Math.min(minX, f.x1, f.x2)
-    minY = Math.min(minY, f.y1, f.y2)
-    maxX = Math.max(maxX, f.x1, f.x2)
-    maxY = Math.max(maxY, f.y1, f.y2)
-  }
-  for (const t of texts) {
-    const { width, height } = layoutTextBox(t)
-    minX = Math.min(minX, t.x)
-    minY = Math.min(minY, t.y)
-    maxX = Math.max(maxX, t.x + width)
-    maxY = Math.max(maxY, t.y + height)
-  }
-  return { minX, minY, maxX, maxY }
-}
+import { exportBounds, labelBox, EXPORT_PADDING, LABEL_FONT } from './bounds'
 
 function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+/** A canvas font shorthand ('bold 14px Inter, ...') as SVG attributes; SVG has no `font` attribute */
+function fontAttrs(font: string): string {
+  const m = /^((?:[a-z]+ )*)(\d+(?:\.\d+)?)px (.+)$/.exec(font)
+  if (!m) return `font-family="${escapeXml(font)}"`
+  const words = m[1].split(' ')
+  return `font-family="${escapeXml(m[3])}" font-size="${m[2]}"` +
+    (words.includes('bold') ? ' font-weight="bold"' : '') +
+    (words.includes('italic') ? ' font-style="italic"' : '')
 }
 
 function shapeToSvg(shape: Shape, ox: number, oy: number): string {
@@ -112,7 +97,7 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
           const lineText = zone.lines[i].trim()
           if (lineText) {
             const ly = textStartY + i * zone.lineHeight + zone.lineHeight * 0.8
-            parts.push(`<text x="${x + w / 2}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="middle" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
+            parts.push(`<text x="${x + w / 2}" y="${ly}" ${fontAttrs(zone.font)} text-anchor="middle" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
           }
         }
       } else if (hasIcon && align === 'right') {
@@ -123,7 +108,7 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
           const lineText = zone.lines[i].trim()
           if (lineText) {
             const ly = contentTop + zone.y + i * zone.lineHeight + zone.lineHeight * 0.8
-            parts.push(`<text x="${textRightEdge}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="end" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
+            parts.push(`<text x="${textRightEdge}" y="${ly}" ${fontAttrs(zone.font)} text-anchor="end" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
           }
         }
       } else if (hasIcon) {
@@ -134,7 +119,7 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
           const lineText = zone.lines[i].trim()
           if (lineText) {
             const ly = contentTop + zone.y + i * zone.lineHeight + zone.lineHeight * 0.8
-            parts.push(`<text x="${textLeftEdge}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="start" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
+            parts.push(`<text x="${textLeftEdge}" y="${ly}" ${fontAttrs(zone.font)} text-anchor="start" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
           }
         }
       } else {
@@ -142,7 +127,7 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
           const lineText = zone.lines[i].trim()
           if (lineText) {
             const ly = contentTop + zone.y + i * zone.lineHeight + zone.lineHeight * 0.8
-            parts.push(`<text x="${x + w / 2}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="middle" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
+            parts.push(`<text x="${x + w / 2}" y="${ly}" ${fontAttrs(zone.font)} text-anchor="middle" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
           }
         }
       }
@@ -167,9 +152,11 @@ function lineToSvg(line: Line, shapes: Shape[], ox: number, oy: number): string 
   parts.push(`<polyline points="${pts.map(p => `${p.x},${p.y}`).join(' ')}" fill="none" stroke="${escapeXml(line.color)}" stroke-width="1.5" stroke-linejoin="round"${line.directed ? ` marker-end="url(#${markerId})"` : ''}/>`)
 
   if (line.label) {
-    const { x: mx, y: my } = polylineMidpoint(pts)
-    parts.push(`<rect x="${mx - 25}" y="${my - 14}" width="50" height="18" fill="white" rx="2"/>`)
-    parts.push(`<text x="${mx}" y="${my}" font-size="12" text-anchor="middle" fill="${escapeXml(line.color)}">${escapeXml(line.label)}</text>`)
+    const mid = polylineMidpoint(pts)
+    const box = labelBox(line.label, mid)
+    parts.push(`<rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" fill="white" rx="2"/>`)
+    // Alphabetic baseline a little above the box bottom, matching the PNG's bottom-aligned text
+    parts.push(`<text x="${mid.x}" y="${box.y + box.height - 5}" ${fontAttrs(LABEL_FONT)} text-anchor="middle" fill="${escapeXml(line.color)}">${escapeXml(line.label)}</text>`)
   }
 
   return parts.join('\n  ')
@@ -189,7 +176,7 @@ export function exportToSvg(shapes: Shape[], lines: Line[], freeLines: FreeLine[
   texts = withResolvedColors(texts)
   if (shapes.length === 0 && freeLines.length === 0 && texts.length === 0) return ''
 
-  const bounds = getBounds(shapes, freeLines, texts)
+  const bounds = exportBounds(shapes, lines, freeLines, texts)
   const w = bounds.maxX - bounds.minX + EXPORT_PADDING * 2
   const h = bounds.maxY - bounds.minY + EXPORT_PADDING * 2
   const ox = bounds.minX - EXPORT_PADDING

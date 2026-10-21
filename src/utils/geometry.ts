@@ -143,13 +143,9 @@ export function getShapeEdgePoint(shape: Shape, target: Point): Point {
   switch (type) {
     case 'ellipse':
     case 'cloud': {
-      const rx = w / 2
-      const ry = h / 2
-      const angle = Math.atan2(dy, dx)
-      return {
-        x: cx + rx * Math.cos(angle),
-        y: cy + ry * Math.sin(angle),
-      }
+      // Where the centre-to-target ray meets the ellipse (not the parametric angle, which is off-ray)
+      const t = 1 / Math.hypot(dx / (w / 2), dy / (h / 2))
+      return { x: cx + dx * t, y: cy + dy * t }
     }
     case 'diamond': {
       const hw = w / 2

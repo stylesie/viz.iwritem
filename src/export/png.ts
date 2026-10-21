@@ -6,32 +6,7 @@ import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../core/autoR
 import { getPolygonVertices } from '../utils/geometry'
 import { routeLine, polylineMidpoint } from '../core/routing'
 import type { TextZoneLayout } from '../core/autoResize'
-
-const EXPORT_PADDING = 40
-
-function getBounds(shapes: Shape[], freeLines: FreeLine[], texts: TextBox[]): { minX: number; minY: number; maxX: number; maxY: number } {
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
-  for (const s of shapes) {
-    minX = Math.min(minX, s.x)
-    minY = Math.min(minY, s.y)
-    maxX = Math.max(maxX, s.x + s.width)
-    maxY = Math.max(maxY, s.y + s.height)
-  }
-  for (const f of freeLines) {
-    minX = Math.min(minX, f.x1, f.x2)
-    minY = Math.min(minY, f.y1, f.y2)
-    maxX = Math.max(maxX, f.x1, f.x2)
-    maxY = Math.max(maxY, f.y1, f.y2)
-  }
-  for (const t of texts) {
-    const { width, height } = layoutTextBox(t)
-    minX = Math.min(minX, t.x)
-    minY = Math.min(minY, t.y)
-    maxX = Math.max(maxX, t.x + width)
-    maxY = Math.max(maxY, t.y + height)
-  }
-  return { minX, minY, maxX, maxY }
-}
+import { exportBounds, labelBox, EXPORT_PADDING, LABEL_FONT } from './bounds'
 
 function drawShapeToCtx(rc: ReturnType<typeof rough.canvas>, ctx: CanvasRenderingContext2D, shape: Shape) {
   const { x, y, width: w, height: h, type, fillColor, strokeColor } = shape
@@ -222,15 +197,15 @@ function drawLineToCtx(ctx: CanvasRenderingContext2D, line: Line, shapes: Shape[
   }
 
   if (line.label) {
-    const { x: midX, y: midY } = polylineMidpoint(pts)
-    ctx.font = '12px Inter, system-ui, sans-serif'
+    const mid = polylineMidpoint(pts)
+    const box = labelBox(line.label, mid)
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(box.x, box.y, box.width, box.height)
+    ctx.font = LABEL_FONT
     ctx.textAlign = 'center'
     ctx.textBaseline = 'bottom'
-    const metrics = ctx.measureText(line.label)
-    ctx.fillStyle = '#ffffff'
-    ctx.fillRect(midX - metrics.width / 2 - 3, midY - 17, metrics.width + 6, 19)
     ctx.fillStyle = line.color
-    ctx.fillText(line.label, midX, midY - 2)
+    ctx.fillText(line.label, mid.x, box.y + box.height - 2)
   }
 
   ctx.restore()
@@ -246,7 +221,7 @@ export function exportToPng(shapes: Shape[], lines: Line[], freeLines: FreeLine[
       return
     }
 
-    const bounds = getBounds(shapes, freeLines, texts)
+    const bounds = exportBounds(shapes, lines, freeLines, texts)
     const w = bounds.maxX - bounds.minX + EXPORT_PADDING * 2
     const h = bounds.maxY - bounds.minY + EXPORT_PADDING * 2
 

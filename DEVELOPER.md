@@ -33,6 +33,7 @@ src/
     excalidraw.ts     Excalidraw JSON export
     png.ts            Canvas-based PNG export (2x DPI)
     svg.ts            SVG string export
+    bounds.ts         Shared export extent (incl. connector routes and labels) and label box
     download.ts       Blob/text download helpers
   utils/
     geometry.ts       Hit testing, edge points, polygon vertices

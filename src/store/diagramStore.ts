@@ -68,6 +68,8 @@ interface EditingTextState {
   original: string | null
   // historyIndex right after this edit pushed its history entry
   historyIndex: number
+  // Redo entries the push discarded, restored if the edit turns out to change nothing
+  redoTail: HistoryEntry[]
 }
 
 /** In-progress connection drag */
@@ -131,7 +133,8 @@ interface DiagramState {
   pushMoveHistory: () => void
   deleteSelected: () => void
   setPan: (x: number, y: number) => void
-  setZoom: (zoom: number) => void
+  /** Zoom to `zoom`, keeping the canvas point under screen point (sx, sy) still */
+  zoomAt: (sx: number, sy: number, zoom: number) => void
   updateShapeText: (id: string, zone: TextZone, text: string) => void
   startEditing: (shapeId: string, zone: TextZone) => void
   stopEditing: () => void
@@ -211,6 +214,11 @@ function pushHistory(get: () => DiagramState, set: (fn: (s: DiagramState) => Par
   // Cap history size
   if (newHistory.length > MAX_HISTORY) newHistory.shift()
   set(() => ({ history: newHistory, historyIndex: newHistory.length - 1 }))
+}
+
+/** Entries redo can still reach (pushHistory discards them) */
+function redoEntries({ history, historyIndex }: DiagramState): HistoryEntry[] {
+  return history.slice(historyIndex + 1)
 }
 
 // Auto-save to IndexedDB
@@ -495,7 +503,11 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
 
   setPan: (x, y) => set({ panX: x, panY: y }),
 
-  setZoom: (zoom) => set({ zoom: Math.max(0.1, Math.min(5, zoom)) }),
+  zoomAt: (sx, sy, zoom) => {
+    const { panX, panY, zoom: old } = get()
+    const z = Math.max(0.1, Math.min(5, zoom))
+    set({ zoom: z, panX: sx - (sx - panX) * z / old, panY: sy - (sy - panY) * z / old })
+  },
 
   updateShapeText: (id, zone, text) => {
     pushHistory(get, set)
@@ -557,12 +569,16 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     pushHistory(get, set)
     const iconKey = `${zone}Icon` as const
     set((state) => {
-      const newShapes = state.shapes.map(s =>
-        s.id === id ? { ...s, [iconKey]: icon } : s
-      )
+      const newShapes = state.shapes.map(s => {
+        if (s.id !== id) return s
+        // An icon takes room beside or above the text, so re-fit like a text change
+        const updated = { ...s, [iconKey]: icon }
+        return { ...updated, ...autoResizeShape(updated) }
+      })
       debouncedAutoSave()
       return { shapes: newShapes }
     })
+    get().triggerLayout()
   },
 
   updateShapeIconAlign: (id, zone, align) => {
@@ -578,6 +594,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       debouncedAutoSave()
       return { shapes: newShapes }
     })
+    get().triggerLayout()
   },
 
   updateLineColor: (id, color) => {
@@ -621,6 +638,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
 
   // Text box actions
   addText: (canvasX, canvasY) => {
+    const redoTail = redoEntries(get())
     pushHistory(get, set)
     const { defaultPalette, snapToGrid: snap } = get()
     const text: TextBox = {
@@ -638,7 +656,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       selection: { type: 'text', id: text.id },
       editing: null,
       editingLine: null,
-      editingText: { id: text.id, original: null, historyIndex: get().historyIndex },
+      editingText: { id: text.id, original: null, historyIndex: get().historyIndex, redoTail },
     }))
   },
 
@@ -680,9 +698,10 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   startEditingText: (id) => {
     const t = get().texts.find(x => x.id === id)
     if (!t) return
+    const redoTail = redoEntries(get())
     pushHistory(get, set)
     set((state) => ({
-      editingText: { id, original: t.text, historyIndex: get().historyIndex },
+      editingText: { id, original: t.text, historyIndex: get().historyIndex, redoTail },
       activeTool: 'select',
       editing: null,
       editingLine: null,
@@ -704,7 +723,9 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       // Empty text boxes are removed rather than left as invisible placeholders
       texts: empty ? texts.filter(x => x.id !== editingText.id) : texts,
       selection: empty && selection?.id === editingText.id ? null : selection,
-      ...(noop && canRollback ? { history: history.slice(0, -1), historyIndex: historyIndex - 1 } : {}),
+      ...(noop && canRollback
+        ? { history: [...history.slice(0, -1), ...editingText.redoTail], historyIndex: historyIndex - 1 }
+        : {}),
     })
     debouncedAutoSave()
   },

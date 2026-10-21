@@ -497,7 +497,7 @@ export default function DiagramCanvas() {
   const snapToGrid = useDiagramStore(s => s.snapToGrid)
   const angleLock = useDiagramStore(s => s.angleLock)
   const setPan = useDiagramStore(s => s.setPan)
-  const setZoom = useDiagramStore(s => s.setZoom)
+  const zoomAt = useDiagramStore(s => s.zoomAt)
   const screenToCanvas = useDiagramStore(s => s.screenToCanvas)
   const startEditing = useDiagramStore(s => s.startEditing)
   const stopEditing = useDiagramStore(s => s.stopEditing)
@@ -886,7 +886,9 @@ export default function DiagramCanvas() {
             if (pos.x !== shape.x || pos.y !== shape.y) setShapePosition(shape.id, pos.x, pos.y)
           }
         } else if (isPanningRef.current) {
-          setPan(panX + dx, panY + dy)
+          // Read the live camera: several pointer events can arrive before this closure is re-created
+          const cam = useDiagramStore.getState()
+          setPan(cam.panX + dx, cam.panY + dy)
         }
       },
       onDragEnd: ({ xy: [sx, sy] }) => {
@@ -928,18 +930,20 @@ export default function DiagramCanvas() {
           return
         }
       },
-      onPinch: ({ offset: [scale] }) => {
-        setZoom(scale)
+      onPinch: ({ offset: [scale], origin: [ox, oy] }) => {
+        const rect = canvasRef.current?.getBoundingClientRect()
+        if (rect) zoomAt(ox - rect.left, oy - rect.top, scale)
       },
-      onWheel: ({ delta: [, dy] }) => {
-        const newZoom = zoom * (1 - dy * 0.001)
-        setZoom(newZoom)
+      onWheel: ({ event, delta: [, dy] }) => {
+        const rect = canvasRef.current?.getBoundingClientRect()
+        if (rect) zoomAt(event.clientX - rect.left, event.clientY - rect.top, useDiagramStore.getState().zoom * (1 - dy * 0.001))
       },
     },
     {
       target: canvasRef,
       drag: { filterTaps: true },
-      pinch: { scaleBounds: { min: 0.1, max: 5 } },
+      // Start each pinch from the store's zoom, which the wheel also changes
+      pinch: { scaleBounds: { min: 0.1, max: 5 }, from: () => [useDiagramStore.getState().zoom, 0] },
       eventOptions: { passive: false },
     }
   )
@@ -986,6 +990,8 @@ export default function DiagramCanvas() {
     >
       <canvas
         ref={canvasRef}
+        // A touch drag produces no click to consume the suppression flag, so a new press clears it
+        onPointerDown={() => { suppressClickRef.current = false }}
         onClick={handleClick}
         onDoubleClick={handleDoubleClick}
         style={{
