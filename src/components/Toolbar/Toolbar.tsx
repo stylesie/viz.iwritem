@@ -101,7 +101,8 @@ function FileMenu() {
     if (!file) return
     const reader = new FileReader()
     reader.onload = () => {
-      loadDiagram(reader.result as string)
+      const error = loadDiagram(reader.result as string)
+      if (error) window.alert(`Couldn't open ${file.name}: ${error}`)
     }
     reader.readAsText(file)
     // Reset so the same file can be loaded again

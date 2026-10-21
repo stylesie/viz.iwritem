@@ -41,7 +41,8 @@ export default function App() {
   useEffect(() => {
     loadAutoSave().then(data => {
       if (data && (data.shapes.length > 0 || (data.freeLines?.length ?? 0) > 0 || (data.texts?.length ?? 0) > 0)) {
-        useDiagramStore.getState().loadDiagram(JSON.stringify(data))
+        const error = useDiagramStore.getState().loadDiagram(JSON.stringify(data))
+        if (error) console.error('Ignoring invalid auto-save:', error)
       }
     })
   }, [])

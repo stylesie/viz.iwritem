@@ -3,6 +3,7 @@ import type { Shape, ShapeType, Line, FreeLine, TextBox, IconAlign } from '../co
 import { createShape, generateId, snapToGrid, snapShapePosition, AUTO_COLOR, INK_LIGHT } from '../core/model'
 import { autoResizeShape } from '../core/autoResize'
 import { runLayout } from '../core/layout'
+import { parseDiagram, DIAGRAM_VERSION } from '../core/validate'
 
 export type { IconAlign }
 
@@ -18,11 +19,14 @@ export interface DefaultPalette {
   shapes: Partial<Record<ShapeType, ShapeColorDefaults>>
   line: { color: string }
   text?: TextDefaults
+  // DIAGRAM_VERSION when saved; absent in palettes saved before 'auto' existed
+  version?: number
 }
 
 const DEFAULT_TEXT: TextDefaults = { color: AUTO_COLOR, scale: 2, bold: true }
 
-// Before AUTO_COLOR existed, lines and text defaulted to the light-theme ink; treat it as auto
+// Before AUTO_COLOR existed, lines and text defaulted to the light-theme ink; treat it as auto.
+// Only for unversioned data: from DIAGRAM_VERSION 2 on, that ink is an explicit swatch choice.
 function migrateInk<T extends { color: string }>(item: T): T {
   return item.color === INK_LIGHT ? { ...item, color: AUTO_COLOR } : item
 }
@@ -34,6 +38,7 @@ function loadDefaultPalette(): DefaultPalette {
     const raw = localStorage.getItem(DEFAULTS_KEY)
     if (raw) {
       const palette = JSON.parse(raw) as DefaultPalette
+      if (palette.version) return palette
       return { ...palette, line: migrateInk(palette.line), text: palette.text && migrateInk(palette.text) }
     }
   } catch { /* ignore */ }
@@ -41,7 +46,7 @@ function loadDefaultPalette(): DefaultPalette {
 }
 
 function saveDefaultPalette(palette: DefaultPalette) {
-  localStorage.setItem(DEFAULTS_KEY, JSON.stringify(palette))
+  localStorage.setItem(DEFAULTS_KEY, JSON.stringify({ ...palette, version: DIAGRAM_VERSION }))
 }
 
 export type Tool = 'select' | 'connect' | 'freeLine' | 'text' | ShapeType
@@ -180,7 +185,8 @@ interface DiagramState {
 
   // Persistence
   saveDiagram: () => string
-  loadDiagram: (json: string) => void
+  /** Returns an error message if the file is invalid, leaving the current diagram untouched */
+  loadDiagram: (json: string) => string | null
 
   // Coordinate transform helpers
   screenToCanvas: (sx: number, sy: number) => { x: number; y: number }
@@ -228,7 +234,7 @@ async function autoSave() {
   try {
     const db = await openDb()
     const tx = db.transaction(DB_STORE, 'readwrite')
-    tx.objectStore(DB_STORE).put({ shapes, lines, freeLines, texts }, AUTO_SAVE_KEY)
+    tx.objectStore(DB_STORE).put({ version: DIAGRAM_VERSION, shapes, lines, freeLines, texts }, AUTO_SAVE_KEY)
     db.close()
   } catch {
     // Silently fail auto-save
@@ -260,6 +266,77 @@ export async function loadAutoSave(): Promise<{ shapes: Shape[]; lines: Line[]; 
   } catch {
     return null
   }
+}
+
+// triggerLayout() was called while a layout was running; rerun once it finishes
+let layoutPending = false
+
+/** Shapes a layout covers (those with a connector), plus a key of everything its result depends on */
+function layoutInput(shapes: Shape[], lines: Line[]) {
+  const connectedIds = new Set<string>()
+  for (const l of lines) {
+    connectedIds.add(l.fromId)
+    connectedIds.add(l.toId)
+  }
+  const connectedShapes = shapes.filter(s => connectedIds.has(s.id))
+  const key = JSON.stringify([
+    connectedShapes.map(s => [s.id, s.x, s.y, s.width, s.height]),
+    lines.map(l => [l.fromId, l.toId]),
+  ])
+  return { connectedShapes, key }
+}
+
+/**
+ * Run ELK on the connected shapes and apply the result, keeping their centre of mass in place.
+ * The result is dropped if those shapes or the connectors changed meanwhile (drag, undo, load...),
+ * since it would overwrite newer state.
+ */
+function startLayout(get: () => DiagramState, set: (partial: Partial<DiagramState>) => void) {
+  const { shapes, lines } = get()
+  const { connectedShapes, key } = layoutInput(shapes, lines)
+  set({ layoutRunning: true })
+
+  runLayout(connectedShapes, lines).then(({ positions }) => {
+    const current = get()
+    if (layoutInput(current.shapes, current.lines).key !== key) return
+
+    let curCx = 0, curCy = 0, layCx = 0, layCy = 0
+    let count = 0
+    for (const s of connectedShapes) {
+      const pos = positions.get(s.id)
+      if (pos) {
+        curCx += s.x + s.width / 2
+        curCy += s.y + s.height / 2
+        layCx += pos.x + s.width / 2
+        layCy += pos.y + s.height / 2
+        count++
+      }
+    }
+    if (count > 0) {
+      curCx /= count; curCy /= count
+      layCx /= count; layCy /= count
+    }
+    const offsetX = curCx - layCx
+    const offsetY = curCy - layCy
+
+    set({
+      shapes: current.shapes.map(s => {
+        const pos = positions.get(s.id)
+        if (!pos) return s
+        const placed = { ...s, x: pos.x + offsetX, y: pos.y + offsetY }
+        return current.snapToGrid ? { ...placed, ...snapShapePosition(placed) } : placed
+      }),
+    })
+    debouncedAutoSave()
+  }).catch(() => {
+    // Layout failed; leave positions as they are
+  }).finally(() => {
+    set({ layoutRunning: false })
+    if (layoutPending) {
+      layoutPending = false
+      get().triggerLayout()
+    }
+  })
 }
 
 export const useDiagramStore = create<DiagramState>((set, get) => ({
@@ -752,107 +829,18 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     if (state.lines.length === 0) return
 
     pushHistory(get, set)
-    set({ layoutRunning: true })
-
-    const connectedIds = new Set<string>()
-    for (const l of state.lines) {
-      connectedIds.add(l.fromId)
-      connectedIds.add(l.toId)
-    }
-    const connectedShapes = state.shapes.filter(s => connectedIds.has(s.id))
-
-    runLayout(connectedShapes, state.lines).then(result => {
-      set((current) => {
-        const positions = result.positions
-        let curCx = 0, curCy = 0, layCx = 0, layCy = 0
-        let count = 0
-        for (const s of connectedShapes) {
-          const pos = positions.get(s.id)
-          if (pos) {
-            curCx += s.x + s.width / 2
-            curCy += s.y + s.height / 2
-            layCx += pos.x + s.width / 2
-            layCy += pos.y + s.height / 2
-            count++
-          }
-        }
-        if (count > 0) {
-          curCx /= count; curCy /= count
-          layCx /= count; layCy /= count
-        }
-        const offsetX = curCx - layCx
-        const offsetY = curCy - layCy
-
-        const newShapes = current.shapes.map(s => {
-          const pos = positions.get(s.id)
-          if (!pos) return s
-          const placed = { ...s, x: pos.x + offsetX, y: pos.y + offsetY }
-          if (current.snapToGrid) return { ...placed, ...snapShapePosition(placed) }
-          return placed
-        })
-
-        debouncedAutoSave()
-        return { shapes: newShapes, layoutRunning: false }
-      })
-    }).catch(() => {
-      set({ layoutRunning: false })
-    })
+    startLayout(get, set)
   },
 
   triggerLayout: () => {
     const state = get()
     if (state.layoutLocked) return
-    if (state.layoutRunning) return
     if (state.lines.length === 0) return
-
-    set({ layoutRunning: true })
-
-    // Only layout shapes that are connected
-    const connectedIds = new Set<string>()
-    for (const l of state.lines) {
-      connectedIds.add(l.fromId)
-      connectedIds.add(l.toId)
+    if (state.layoutRunning) {
+      layoutPending = true
+      return
     }
-    const connectedShapes = state.shapes.filter(s => connectedIds.has(s.id))
-
-    runLayout(connectedShapes, state.lines).then(result => {
-      set((current) => {
-        // Animate: compute offset from layout origin to current center of mass
-        const positions = result.positions
-
-        // Find center of mass of current positions and layout positions
-        let curCx = 0, curCy = 0, layCx = 0, layCy = 0
-        let count = 0
-        for (const s of connectedShapes) {
-          const pos = positions.get(s.id)
-          if (pos) {
-            curCx += s.x + s.width / 2
-            curCy += s.y + s.height / 2
-            layCx += pos.x + s.width / 2
-            layCy += pos.y + s.height / 2
-            count++
-          }
-        }
-        if (count > 0) {
-          curCx /= count; curCy /= count
-          layCx /= count; layCy /= count
-        }
-        const offsetX = curCx - layCx
-        const offsetY = curCy - layCy
-
-        const newShapes = current.shapes.map(s => {
-          const pos = positions.get(s.id)
-          if (!pos) return s
-          const placed = { ...s, x: pos.x + offsetX, y: pos.y + offsetY }
-          if (current.snapToGrid) return { ...placed, ...snapShapePosition(placed) }
-          return placed
-        })
-
-        return { shapes: newShapes, layoutRunning: false }
-      })
-    }).catch(() => {
-      set({ layoutRunning: false })
-    })
+    startLayout(get, set)
   },
 
   // Undo / Redo
@@ -911,41 +899,31 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   // Persistence
   saveDiagram: () => {
     const { shapes, lines, freeLines, texts } = get()
-    return JSON.stringify({ shapes, lines, freeLines, texts }, null, 2)
+    return JSON.stringify({ version: DIAGRAM_VERSION, shapes, lines, freeLines, texts }, null, 2)
   },
 
   loadDiagram: (json) => {
+    let parsed
     try {
-      const data = JSON.parse(json)
-      if (data.shapes && Array.isArray(data.shapes)) {
-        // Migrate old shape types
-        const migratedShapes = data.shapes.map((s: Shape) => {
-          const migrated = { ...s }
-          const oldType = migrated.type as string
-          if (oldType === 'square') migrated.type = 'rectangle'
-          else if (oldType === 'circle' || oldType === 'oval') migrated.type = 'ellipse'
-          // Backfill missing IconAlign fields
-          if (!migrated.headerIconAlign) migrated.headerIconAlign = 'left'
-          if (!migrated.bodyIconAlign) migrated.bodyIconAlign = 'left'
-          if (!migrated.footerIconAlign) migrated.footerIconAlign = 'left'
-          return migrated
-        })
-        pushHistory(get, set)
-        set({
-          shapes: migratedShapes,
-          lines: (data.lines || []).map(migrateInk),
-          freeLines: (Array.isArray(data.freeLines) ? data.freeLines : []).map(migrateInk),
-          texts: (Array.isArray(data.texts) ? data.texts : []).map(migrateInk),
-          selection: null,
-          editing: null,
-          editingLine: null,
-          editingText: null,
-        })
-        debouncedAutoSave()
-      }
-    } catch {
-      console.error('Failed to load diagram: invalid JSON')
+      parsed = parseDiagram(json)
+    } catch (e) {
+      return (e as Error).message
     }
+    const { diagram, version } = parsed
+    const ink = version < 2 ? migrateInk : <T,>(item: T) => item
+    pushHistory(get, set)
+    set({
+      shapes: diagram.shapes,
+      lines: diagram.lines.map(ink),
+      freeLines: diagram.freeLines.map(ink),
+      texts: diagram.texts.map(ink),
+      selection: null,
+      editing: null,
+      editingLine: null,
+      editingText: null,
+    })
+    debouncedAutoSave()
+    return null
   },
 
   screenToCanvas: (sx, sy) => {

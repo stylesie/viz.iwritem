@@ -5,7 +5,7 @@
 - **Rough.js** -- Hand-drawn shape rendering on `<canvas>`
 - **@use-gesture/react** -- Pan, zoom, pinch, drag gestures
 - **Zustand** -- Single store for all state (`src/store/diagramStore.ts`)
-- **ELK.js** -- Auto-layout engine (with Dagre fallback in `src/core/layout.ts`)
+- **ELK.js** -- Auto-layout engine (`src/core/layout.ts`)
 - **vite-plugin-pwa** -- Service worker and manifest generation
 
 ## Project Structure
@@ -54,6 +54,8 @@ The cylinder shape is composed of separate Rough.js primitives (ellipse, lines, 
 
 The layout result is offset so the center of mass of connected shapes stays constant -- this prevents the diagram from jumping to the origin.
 
+Both run through `startLayout()`. ELK is asynchronous, so when a result arrives it is dropped if the connected shapes' positions or sizes, or the connectors, changed in the meantime (drag, undo, load...). A `triggerLayout()` call while a layout is running is queued and runs once it finishes.
+
 When `layoutLocked` is true, `triggerLayout()` is a no-op. `forceLayout()` bypasses the lock and always runs (used by the Arrange button). Force layout pushes history first so it's undoable.
 
 Children are passed to ELK in breadth-first flow order from root shapes (no incoming lines), with `MODEL_ORDER` cycle breaking, so loops become back-edges rather than reordering the flow.
@@ -83,12 +85,12 @@ Snapping works on shape **centres** (`snapShapePosition()` in `model.ts`) becaus
 ### Transparent Colors
 `'transparent'` is a valid fill/stroke/text color value. The color picker (`<input type="color">`) is hidden when the current value is transparent since it doesn't support it. Rough.js handles `fill: 'transparent'` correctly with `fillStyle: 'solid'`.
 
-`AUTO_COLOR` (`'auto'`, `model.ts`) is a line / free line / text box colour that follows the theme. The canvas resolves it with `resolveColor(color, tc.ink)` (`INK_LIGHT` / `INK_DARK`); exporters resolve it to `INK_LIGHT` up front with `withResolvedColors()`, since their background is white. It is the default line and text colour. Saved diagrams and palettes from before it existed used `INK_LIGHT` (`#2d3436`) as the fixed default, so `migrateInk()` turns that value into `'auto'` on load.
+`AUTO_COLOR` (`'auto'`, `model.ts`) is a line / free line / text box colour that follows the theme. The canvas resolves it with `resolveColor(color, tc.ink)` (`INK_LIGHT` / `INK_DARK`); exporters resolve it to `INK_LIGHT` up front with `withResolvedColors()`, since their background is white. It is the default line and text colour. Saved diagrams and palettes from before it existed used `INK_LIGHT` (`#2d3436`) as the fixed default, so `migrateInk()` turns that value into `'auto'` on load, but only for unversioned data. Files, auto-saves and palettes now carry `version: DIAGRAM_VERSION` (2, `core/validate.ts`), and from version 2 a stored `#2d3436` is an explicit swatch choice and is kept.
 
 ## Build & Check
 
 ```bash
-npx tsc --noEmit      # Type-check
+npx tsc --noEmit -p tsconfig.app.json   # Type-check (the root tsconfig.json only holds references)
 npx vite build        # Production build
 npm run dev           # Dev server with HMR
 ```
@@ -97,6 +99,7 @@ The ELK.js chunk is ~1.4MB (450KB gzipped). It's loaded lazily on first layout t
 
 ## Conventions
 - Shapes can change type (`changeShapeType()`, from the property panel). The shape keeps its id, so connectors stay attached; it is re-fitted with `autoResizeShape()` around its centre (some types need extra text padding) and layout re-runs. Colours are kept rather than switching to the new type's defaults
+- Loaded files and the auto-save go through `parseDiagram()` (`core/validate.ts`) before touching state. It checks every field's type, finite numbers, colours (hex, keyword, `rgb()`/`hsl()`, `transparent`, `auto` only, so nothing can break out of an SVG attribute), unique ids across all arrays and connector endpoints, and rejects the whole file on the first problem; `loadDiagram()` returns that message. New fields must be added there. The SVG exporter also escapes every colour attribute
 - Old shape types (`square`, `circle`, `oval`) are migrated to `rectangle`/`ellipse` on file load
 - Shape IDs use format `el_{counter}_{timestamp_base36}`
 - History is capped at 50 entries; undo/redo operates on full shapes + lines + freeLines + texts snapshots. `pushHistory()` records the pre-action state; `history[historyIndex]` is what undo restores next, and the present state is appended on the first undo so redo can return to it

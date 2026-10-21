@@ -42,7 +42,7 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
   const parts: string[] = []
 
   // Shape outline
-  const svgAttrs = `fill="${fillColor}" stroke="${strokeColor}" stroke-width="1.5"`
+  const svgAttrs = `fill="${escapeXml(fillColor)}" stroke="${escapeXml(strokeColor)}" stroke-width="1.5"`
   switch (type) {
     case 'rectangle':
       parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" ${svgAttrs} rx="2"/>`)
@@ -69,10 +69,10 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
     case 'cylinder': {
       const ry = h * 0.12
       parts.push(`<ellipse cx="${x + w / 2}" cy="${y + ry}" rx="${w / 2}" ry="${ry}" ${svgAttrs}/>`)
-      parts.push(`<rect x="${x}" y="${y + ry}" width="${w}" height="${h - ry * 2}" fill="${fillColor}" stroke="none"/>`)
-      parts.push(`<line x1="${x}" y1="${y + ry}" x2="${x}" y2="${y + h - ry}" stroke="${strokeColor}" stroke-width="1.5"/>`)
-      parts.push(`<line x1="${x + w}" y1="${y + ry}" x2="${x + w}" y2="${y + h - ry}" stroke="${strokeColor}" stroke-width="1.5"/>`)
-      parts.push(`<path d="M ${x} ${y + h - ry} A ${w / 2} ${ry} 0 0 0 ${x + w} ${y + h - ry}" fill="none" stroke="${strokeColor}" stroke-width="1.5"/>`)
+      parts.push(`<rect x="${x}" y="${y + ry}" width="${w}" height="${h - ry * 2}" fill="${escapeXml(fillColor)}" stroke="none"/>`)
+      parts.push(`<line x1="${x}" y1="${y + ry}" x2="${x}" y2="${y + h - ry}" stroke="${escapeXml(strokeColor)}" stroke-width="1.5"/>`)
+      parts.push(`<line x1="${x + w}" y1="${y + ry}" x2="${x + w}" y2="${y + h - ry}" stroke="${escapeXml(strokeColor)}" stroke-width="1.5"/>`)
+      parts.push(`<path d="M ${x} ${y + h - ry} A ${w / 2} ${ry} 0 0 0 ${x + w} ${y + h - ry}" fill="none" stroke="${escapeXml(strokeColor)}" stroke-width="1.5"/>`)
       break
     }
     case 'cloud': {
@@ -106,35 +106,35 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
 
       if (hasIcon && align === 'center') {
         const iconX = x + w / 2
-        parts.push(`<text x="${iconX}" y="${contentTop + zone.y + ICON_SIZE}" font-size="${ICON_SIZE}" text-anchor="middle" fill="${shape.textColor}">${escapeXml(zone.icon)}</text>`)
+        parts.push(`<text x="${iconX}" y="${contentTop + zone.y + ICON_SIZE}" font-size="${ICON_SIZE}" text-anchor="middle" fill="${escapeXml(shape.textColor)}">${escapeXml(zone.icon)}</text>`)
         const textStartY = contentTop + zone.y + ICON_SIZE + ICON_GAP
         for (let i = 0; i < zone.lines.length; i++) {
           const lineText = zone.lines[i].trim()
           if (lineText) {
             const ly = textStartY + i * zone.lineHeight + zone.lineHeight * 0.8
-            parts.push(`<text x="${x + w / 2}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="middle" fill="${shape.textColor}">${escapeXml(lineText)}</text>`)
+            parts.push(`<text x="${x + w / 2}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="middle" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
           }
         }
       } else if (hasIcon && align === 'right') {
         const iconX = x + w - PADDING_X
-        parts.push(`<text x="${iconX}" y="${contentTop + zone.y + ICON_SIZE}" font-size="${ICON_SIZE}" text-anchor="middle" fill="${shape.textColor}">${escapeXml(zone.icon)}</text>`)
+        parts.push(`<text x="${iconX}" y="${contentTop + zone.y + ICON_SIZE}" font-size="${ICON_SIZE}" text-anchor="middle" fill="${escapeXml(shape.textColor)}">${escapeXml(zone.icon)}</text>`)
         const textRightEdge = iconX - ICON_SIZE / 2 - ICON_GAP
         for (let i = 0; i < zone.lines.length; i++) {
           const lineText = zone.lines[i].trim()
           if (lineText) {
             const ly = contentTop + zone.y + i * zone.lineHeight + zone.lineHeight * 0.8
-            parts.push(`<text x="${textRightEdge}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="end" fill="${shape.textColor}">${escapeXml(lineText)}</text>`)
+            parts.push(`<text x="${textRightEdge}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="end" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
           }
         }
       } else if (hasIcon) {
         const iconX = x + PADDING_X
-        parts.push(`<text x="${iconX}" y="${contentTop + zone.y + ICON_SIZE}" font-size="${ICON_SIZE}" text-anchor="middle" fill="${shape.textColor}">${escapeXml(zone.icon)}</text>`)
+        parts.push(`<text x="${iconX}" y="${contentTop + zone.y + ICON_SIZE}" font-size="${ICON_SIZE}" text-anchor="middle" fill="${escapeXml(shape.textColor)}">${escapeXml(zone.icon)}</text>`)
         const textLeftEdge = iconX + ICON_SIZE / 2 + ICON_GAP
         for (let i = 0; i < zone.lines.length; i++) {
           const lineText = zone.lines[i].trim()
           if (lineText) {
             const ly = contentTop + zone.y + i * zone.lineHeight + zone.lineHeight * 0.8
-            parts.push(`<text x="${textLeftEdge}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="start" fill="${shape.textColor}">${escapeXml(lineText)}</text>`)
+            parts.push(`<text x="${textLeftEdge}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="start" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
           }
         }
       } else {
@@ -142,7 +142,7 @@ function shapeToSvg(shape: Shape, ox: number, oy: number): string {
           const lineText = zone.lines[i].trim()
           if (lineText) {
             const ly = contentTop + zone.y + i * zone.lineHeight + zone.lineHeight * 0.8
-            parts.push(`<text x="${x + w / 2}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="middle" fill="${shape.textColor}">${escapeXml(lineText)}</text>`)
+            parts.push(`<text x="${x + w / 2}" y="${ly}" font="${escapeXml(zone.font)}" font-size="13" text-anchor="middle" fill="${escapeXml(shape.textColor)}">${escapeXml(lineText)}</text>`)
           }
         }
       }
@@ -161,15 +161,15 @@ function lineToSvg(line: Line, shapes: Shape[], ox: number, oy: number): string 
   const markerId = `arrow-${line.id.replace(/[^a-zA-Z0-9]/g, '')}`
 
   if (line.directed) {
-    parts.push(`<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${line.color}"/></marker></defs>`)
+    parts.push(`<defs><marker id="${markerId}" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${escapeXml(line.color)}"/></marker></defs>`)
   }
 
-  parts.push(`<polyline points="${pts.map(p => `${p.x},${p.y}`).join(' ')}" fill="none" stroke="${line.color}" stroke-width="1.5" stroke-linejoin="round"${line.directed ? ` marker-end="url(#${markerId})"` : ''}/>`)
+  parts.push(`<polyline points="${pts.map(p => `${p.x},${p.y}`).join(' ')}" fill="none" stroke="${escapeXml(line.color)}" stroke-width="1.5" stroke-linejoin="round"${line.directed ? ` marker-end="url(#${markerId})"` : ''}/>`)
 
   if (line.label) {
     const { x: mx, y: my } = polylineMidpoint(pts)
     parts.push(`<rect x="${mx - 25}" y="${my - 14}" width="50" height="18" fill="white" rx="2"/>`)
-    parts.push(`<text x="${mx}" y="${my}" font-size="12" text-anchor="middle" fill="${line.color}">${escapeXml(line.label)}</text>`)
+    parts.push(`<text x="${mx}" y="${my}" font-size="12" text-anchor="middle" fill="${escapeXml(line.color)}">${escapeXml(line.label)}</text>`)
   }
 
   return parts.join('\n  ')
@@ -179,7 +179,7 @@ function textBoxToSvg(t: TextBox, ox: number, oy: number): string {
   const { lines, fontSize, lineHeight } = layoutTextBox(t)
   const weight = t.bold ? ' font-weight="bold"' : ''
   return lines.map((l, i) =>
-    `<text x="${t.x - ox}" y="${t.y - oy + (i + 0.5) * lineHeight}" font-family="Inter, system-ui, sans-serif" font-size="${fontSize}"${weight} dominant-baseline="central" fill="${t.color}" xml:space="preserve">${escapeXml(l)}</text>`,
+    `<text x="${t.x - ox}" y="${t.y - oy + (i + 0.5) * lineHeight}" font-family="Inter, system-ui, sans-serif" font-size="${fontSize}"${weight} dominant-baseline="central" fill="${escapeXml(t.color)}" xml:space="preserve">${escapeXml(l)}</text>`,
   ).join('\n  ')
 }
 
@@ -197,7 +197,7 @@ export function exportToSvg(shapes: Shape[], lines: Line[], freeLines: FreeLine[
 
   const linesSvg = lines.map(l => lineToSvg(l, shapes, ox, oy)).filter(Boolean).join('\n  ')
   const freeLinesSvg = freeLines.map(f =>
-    `<line x1="${f.x1 - ox}" y1="${f.y1 - oy}" x2="${f.x2 - ox}" y2="${f.y2 - oy}" stroke="${f.color}" stroke-width="2" stroke-linecap="round"/>`,
+    `<line x1="${f.x1 - ox}" y1="${f.y1 - oy}" x2="${f.x2 - ox}" y2="${f.y2 - oy}" stroke="${escapeXml(f.color)}" stroke-width="2" stroke-linecap="round"/>`,
   ).join('\n  ')
   const shapesSvg = shapes.map(s => shapeToSvg(s, ox, oy)).join('\n  ')
   const textsSvg = texts.map(t => textBoxToSvg(t, ox, oy)).join('\n  ')
