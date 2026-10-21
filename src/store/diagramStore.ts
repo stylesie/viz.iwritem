@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Shape, ShapeType, Line, IconAlign } from '../core/model'
-import { createShape, generateId } from '../core/model'
+import { createShape, generateId, snapToGrid, snapShapePosition } from '../core/model'
 import { autoResizeShape } from '../core/autoResize'
 import { runLayout } from '../core/layout'
 
@@ -72,6 +72,7 @@ interface DiagramState {
   selection: SelectionKind
   layoutRunning: boolean
   layoutLocked: boolean
+  snapToGrid: boolean
   // Camera
   panX: number
   panY: number
@@ -94,6 +95,7 @@ interface DiagramState {
   selectLine: (id: string | null) => void
   clearSelection: () => void
   moveShape: (id: string, dx: number, dy: number) => void
+  setShapePosition: (id: string, x: number, y: number) => void
   pushMoveHistory: () => void
   deleteSelected: () => void
   setPan: (x: number, y: number) => void
@@ -122,6 +124,7 @@ interface DiagramState {
 
   // Layout
   toggleLayoutLock: () => void
+  toggleSnapToGrid: () => void
   forceLayout: () => void
   triggerLayout: () => void
 
@@ -217,6 +220,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   selection: null,
   layoutRunning: false,
   layoutLocked: localStorage.getItem('idrawm-layout-locked') === 'true',
+  snapToGrid: localStorage.getItem('idrawm-snap-grid') === 'true',
   panX: 0,
   panY: 0,
   zoom: 1,
@@ -258,7 +262,8 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   addShape: (type, canvasX, canvasY) => {
     pushHistory(get, set)
     const palette = get().defaultPalette.shapes[type]
-    const shape = createShape(type, canvasX, canvasY, palette ? { fillColor: palette.fillColor, strokeColor: palette.strokeColor, textColor: palette.textColor } : undefined)
+    const snap = get().snapToGrid
+    const shape = createShape(type, snap ? snapToGrid(canvasX) : canvasX, snap ? snapToGrid(canvasY) : canvasY, palette ? { fillColor: palette.fillColor, strokeColor: palette.strokeColor, textColor: palette.textColor } : undefined)
     set((state) => {
       const newShapes = [...state.shapes.map(s => ({ ...s, selected: false })), { ...shape, selected: true }]
       debouncedAutoSave(newShapes, state.lines)
@@ -296,6 +301,14 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
       const newShapes = state.shapes.map(s =>
         s.id === id ? { ...s, x: s.x + dx, y: s.y + dy } : s
       )
+      debouncedAutoSave(newShapes, state.lines)
+      return { shapes: newShapes }
+    })
+  },
+
+  setShapePosition: (id, x, y) => {
+    set((state) => {
+      const newShapes = state.shapes.map(s => (s.id === id ? { ...s, x, y } : s))
       debouncedAutoSave(newShapes, state.lines)
       return { shapes: newShapes }
     })
@@ -505,6 +518,22 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
     })
   },
 
+  toggleSnapToGrid: () => {
+    const next = !get().snapToGrid
+    localStorage.setItem('idrawm-snap-grid', String(next))
+    if (!next) {
+      set({ snapToGrid: false })
+      return
+    }
+    // Turning snap on aligns everything already on the canvas
+    pushHistory(get, set)
+    set((state) => {
+      const newShapes = state.shapes.map(s => ({ ...s, ...snapShapePosition(s) }))
+      debouncedAutoSave(newShapes, state.lines)
+      return { shapes: newShapes, snapToGrid: true }
+    })
+  },
+
   forceLayout: () => {
     const state = get()
     if (state.layoutRunning) return
@@ -544,8 +573,10 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
 
         const newShapes = current.shapes.map(s => {
           const pos = positions.get(s.id)
-          if (pos) return { ...s, x: pos.x + offsetX, y: pos.y + offsetY }
-          return s
+          if (!pos) return s
+          const placed = { ...s, x: pos.x + offsetX, y: pos.y + offsetY }
+          if (current.snapToGrid) return { ...placed, ...snapShapePosition(placed) }
+          return placed
         })
 
         debouncedAutoSave(newShapes, current.lines)
@@ -599,10 +630,10 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
 
         const newShapes = current.shapes.map(s => {
           const pos = positions.get(s.id)
-          if (pos) {
-            return { ...s, x: pos.x + offsetX, y: pos.y + offsetY }
-          }
-          return s
+          if (!pos) return s
+          const placed = { ...s, x: pos.x + offsetX, y: pos.y + offsetY }
+          if (current.snapToGrid) return { ...placed, ...snapShapePosition(placed) }
+          return placed
         })
 
         return { shapes: newShapes, layoutRunning: false }

@@ -7,6 +7,7 @@ import { hitTestShape, getShapeEdgePoint, pointToSegmentDist, getPolygonVertices
 import { routeLine, polylineMidpoint } from '../../core/routing'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../../core/autoResize'
 import type { Shape, Line } from '../../core/model'
+import { GRID_SIZE, snapShapePosition } from '../../core/model'
 import type { TextZoneLayout } from '../../core/autoResize'
 
 // ── Theme-aware colors ─────────────────────────────────────────
@@ -387,6 +388,8 @@ export default function DiagramCanvas() {
   const selectLine = useDiagramStore(s => s.selectLine)
   const clearSelection = useDiagramStore(s => s.clearSelection)
   const moveShape = useDiagramStore(s => s.moveShape)
+  const setShapePosition = useDiagramStore(s => s.setShapePosition)
+  const snapToGrid = useDiagramStore(s => s.snapToGrid)
   const setPan = useDiagramStore(s => s.setPan)
   const setZoom = useDiagramStore(s => s.setZoom)
   const screenToCanvas = useDiagramStore(s => s.screenToCanvas)
@@ -400,6 +403,8 @@ export default function DiagramCanvas() {
   const pushMoveHistory = useDiagramStore(s => s.pushMoveHistory)
 
   const dragTargetRef = useRef<string | null>(null)
+  // Shape position at drag start — snapped drags are computed from here, not accumulated
+  const dragOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
   const isPanningRef = useRef(false)
   const didDragRef = useRef(false)
 
@@ -569,6 +574,7 @@ export default function DiagramCanvas() {
           if (hit) {
             selectShape(hit.id)
             dragTargetRef.current = hit.id
+            dragOriginRef.current = { x: hit.x, y: hit.y }
             isPanningRef.current = false
             pushMoveHistory()
           } else {
@@ -592,7 +598,13 @@ export default function DiagramCanvas() {
           return
         }
 
-        if (dragTargetRef.current) {
+        if (dragTargetRef.current && snapToGrid) {
+          const shape = shapes.find(s => s.id === dragTargetRef.current)
+          if (shape) {
+            const pos = snapShapePosition({ ...shape, x: dragOriginRef.current.x + mx / zoom, y: dragOriginRef.current.y + my / zoom })
+            if (pos.x !== shape.x || pos.y !== shape.y) setShapePosition(shape.id, pos.x, pos.y)
+          }
+        } else if (dragTargetRef.current) {
           moveShape(dragTargetRef.current, dx / zoom, dy / zoom)
         } else if (isPanningRef.current) {
           setPan(panX + dx, panY + dy)
@@ -695,7 +707,7 @@ function drawGrid(
   zoom: number,
   tc: ThemeColors,
 ) {
-  const gridSize = 20
+  const gridSize = GRID_SIZE
   ctx.save()
   ctx.strokeStyle = tc.grid
   ctx.lineWidth = 0.5

@@ -170,6 +170,8 @@ export default function Toolbar() {
   const layoutLocked = useDiagramStore(s => s.layoutLocked)
   const toggleLayoutLock = useDiagramStore(s => s.toggleLayoutLock)
   const forceLayout = useDiagramStore(s => s.forceLayout)
+  const snapToGrid = useDiagramStore(s => s.snapToGrid)
+  const toggleSnapToGrid = useDiagramStore(s => s.toggleSnapToGrid)
   const lines = useDiagramStore(s => s.lines)
   const hasSelection = selection !== null
 
@@ -279,6 +281,14 @@ export default function Toolbar() {
         >
           <span className="tool-icon">{'\u2B82'}</span>
           <span className="tool-label">Arrange</span>
+        </button>
+        <button
+          className={`tool-btn ${snapToGrid ? 'active' : ''}`}
+          onClick={toggleSnapToGrid}
+          title={snapToGrid ? 'Snap to grid on (click to turn off)' : 'Snap to grid off (click to align shapes to the grid)'}
+        >
+          <span className="tool-icon">#</span>
+          <span className="tool-label">Grid</span>
         </button>
       </div>
 

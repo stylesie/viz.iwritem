@@ -46,6 +46,19 @@ export function generateId(): string {
 
 export const DEFAULT_SHAPE_SIZE = 100
 export const MIN_SHAPE_SIZE = 40
+export const GRID_SIZE = 20
+
+export function snapToGrid(v: number): number {
+  return Math.round(v / GRID_SIZE) * GRID_SIZE
+}
+
+/** Top-left position that puts the shape's centre on the nearest grid point. */
+export function snapShapePosition(shape: Pick<Shape, 'x' | 'y' | 'width' | 'height'>): { x: number; y: number } {
+  return {
+    x: snapToGrid(shape.x + shape.width / 2) - shape.width / 2,
+    y: snapToGrid(shape.y + shape.height / 2) - shape.height / 2,
+  }
+}
 
 export function createShape(type: ShapeType, x: number, y: number, colors?: { fillColor?: string; strokeColor?: string; textColor?: string }): Shape {
   const size = DEFAULT_SHAPE_SIZE
