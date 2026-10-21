@@ -93,10 +93,12 @@ Each "Set as Default" button saves the current color as the default for that sha
 | `Ctrl+Shift+G` | Ungroup the selection |
 | `Shift` / `Ctrl` + click | Add to or remove from the selection |
 | `Space` + drag | Pan |
+| Wheel / `Shift`+wheel | Pan up-down / sideways |
+| `Ctrl`+wheel / `Cmd`+wheel | Zoom |
 
 ### Navigation
-- **Pan** -- Drag with two fingers, drag with the middle mouse button, or hold `Space` and drag. (A one-finger or left-button drag on empty canvas draws a selection box.)
-- **Zoom** -- Scroll wheel or pinch gesture, centred on the pointer or fingers
+- **Pan** -- Scroll with the mouse wheel or a trackpad (`Shift`+wheel scrolls sideways), drag with two fingers, drag with the middle mouse button, or hold `Space` and drag. (A one-finger or left-button drag on empty canvas draws a selection box.)
+- **Zoom** -- `Ctrl`+wheel (`Cmd`+wheel on Mac), or pinch on a trackpad or touch screen, centred on the pointer or fingers
 - **Move shapes** -- Drag a shape
 
 ### File Operations

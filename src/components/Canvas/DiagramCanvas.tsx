@@ -512,6 +512,8 @@ function selectedGroupBounds(selected: Set<string>, shapes: Shape[], freeLines: 
 }
 
 const GROUP_OUTLINE_PAD = 12
+// Zoom factor per pixel of Ctrl/Cmd+wheel delta: e^(-0.002 × 100) ≈ 0.82 per mouse notch
+const WHEEL_ZOOM_RATE = 0.002
 
 type MoveGrab = { kind: 'shape'; shape: Shape; anchors: Point[] } | { kind: 'point'; origin: Point }
 
@@ -1037,9 +1039,20 @@ export default function DiagramCanvas() {
         zoomAt(sx, sy, scale)
         return [sx, sy]
       },
-      onWheel: ({ event, delta: [, dy] }) => {
-        const rect = canvasRef.current?.getBoundingClientRect()
-        if (rect) zoomAt(event.clientX - rect.left, event.clientY - rect.top, useDiagramStore.getState().zoom * (1 - dy * 0.001))
+      // Wheel / two-finger trackpad scroll pans (Figma/Excalidraw style); Ctrl/Cmd+wheel, which is
+      // also how trackpad pinches arrive, zooms around the pointer
+      onWheel: ({ event, delta: [dx, dy] }) => {
+        event.preventDefault() // no page scroll or browser zoom
+        const cam = useDiagramStore.getState()
+        if (event.ctrlKey || event.metaKey) {
+          const rect = canvasRef.current?.getBoundingClientRect()
+          // Exponential, so a mouse notch (~100px) is ~20% and small trackpad pinch steps stay smooth
+          if (rect) zoomAt(event.clientX - rect.left, event.clientY - rect.top, cam.zoom * Math.exp(-dy * WHEEL_ZOOM_RATE))
+          return
+        }
+        // Shift+wheel scrolls sideways on mice that only report vertical deltas
+        const [px, py] = event.shiftKey && dx === 0 ? [dy, 0] : [dx, dy]
+        setPan(cam.panX - px, cam.panY - py)
       },
     },
     {
@@ -1047,7 +1060,8 @@ export default function DiagramCanvas() {
       // Left button drags select/move; the middle button pans
       drag: { filterTaps: true, pointer: { buttons: [1, 4] } },
       // Start each pinch from the store's zoom, which the wheel also changes
-      pinch: { scaleBounds: { min: 0.1, max: 5 }, from: () => [useDiagramStore.getState().zoom, 0] },
+      // Pinch is touch (and Safari trackpad gestures) only; Ctrl/Cmd+wheel zoom is handled in onWheel
+      pinch: { scaleBounds: { min: 0.1, max: 5 }, from: () => [useDiagramStore.getState().zoom, 0], pinchOnWheel: false },
       eventOptions: { passive: false },
     }
   )
