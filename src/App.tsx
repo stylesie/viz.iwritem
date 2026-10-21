@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import DiagramCanvas from './components/Canvas/DiagramCanvas'
 import Toolbar from './components/Toolbar/Toolbar'
 import TextEditor from './components/TextEditor/TextEditor'
@@ -37,13 +37,19 @@ export default function App() {
     document.documentElement.setAttribute('data-theme', theme)
   }, [theme])
 
-  // Restore auto-saved diagram on mount
+  // Restore the auto-saved diagram before showing the editor, so nothing made in the meantime gets
+  // replaced by it (and then auto-saved over it)
+  const [restored, setRestored] = useState(false)
   useEffect(() => {
     loadAutoSave().then(data => {
       if (data && (data.shapes.length > 0 || (data.freeLines?.length ?? 0) > 0 || (data.texts?.length ?? 0) > 0)) {
-        const error = useDiagramStore.getState().loadDiagram(JSON.stringify(data))
+        const { loadDiagram, history } = useDiagramStore.getState()
+        const error = loadDiagram(JSON.stringify(data))
         if (error) console.error('Ignoring invalid auto-save:', error)
+        // The restored diagram is the starting point, not an undoable change from an empty canvas
+        else useDiagramStore.setState({ history: history.slice(0, 1), historyIndex: 0 })
       }
+      setRestored(true)
     })
   }, [])
 
@@ -96,6 +102,8 @@ export default function App() {
     window.addEventListener('keydown', handleKey)
     return () => window.removeEventListener('keydown', handleKey)
   }, [setTool, editing, editingLine, editingText, undo, redo, deleteSelected, selectAll])
+
+  if (!restored) return <div className="app" />
 
   return (
     <div className="app">

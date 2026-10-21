@@ -144,16 +144,22 @@ function orthogonalRoute(from: Shape, to: Shape, shapes: Shape[]): Point[] | nul
   const ys = uniqSorted(yVals)
   const W = xs.length, H = ys.length
 
-  const nodeBlocked = new Uint8Array(W * H)
-  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) nodeBlocked[j * W + i] = blocked(xs[i], ys[j]) ? 1 : 0
+  // Obstacle interiors rasterised onto a doubled grid: even indices are grid lines, odd ones the
+  // midpoints between them. Obstacle edges are grid lines, so a segment between adjacent nodes is
+  // either fully inside an obstacle or not, and its midpoint cell says which. Filling each
+  // obstacle's cells once replaces testing every obstacle at every node and step.
+  const W2 = 2 * W - 1, H2 = 2 * H - 1
+  const inside = new Uint8Array(W2 * H2)
+  for (const r of obstacles) {
+    const i0 = 2 * indexOf(xs, r.l) + 1, i1 = 2 * indexOf(xs, r.r) - 1
+    const j0 = 2 * indexOf(ys, r.t) + 1, j1 = 2 * indexOf(ys, r.b) - 1
+    for (let j = j0; j <= j1; j++) inside.fill(1, j * W2 + i0, j * W2 + i1 + 1)
+  }
 
-  // A segment between adjacent grid nodes is either fully inside an obstacle or not,
-  // because obstacle edges are grid lines — so testing its midpoint is enough.
   const edgeOpen = (i: number, j: number, dir: Dir): boolean => {
     const ni = i + DX[dir], nj = j + DY[dir]
     if (ni < 0 || nj < 0 || ni >= W || nj >= H) return false
-    if (nodeBlocked[nj * W + ni]) return false
-    return !blocked((xs[i] + xs[ni]) / 2, (ys[j] + ys[nj]) / 2)
+    return !inside[2 * nj * W2 + 2 * ni] && !inside[(j + nj) * W2 + (i + ni)]
   }
 
   // State = node * 4 + direction of travel on arrival
@@ -165,7 +171,11 @@ function orthogonalRoute(from: Shape, to: Shape, shapes: Shape[]): Point[] | nul
   const targets = new Map<number, Port>()
   for (const p of dstPorts) targets.set(indexOf(ys, p.stub.y) * W + indexOf(xs, p.stub.x), p)
   const targetPts = dstPorts.map(p => p.stub)
-  const h = (x: number, y: number) => Math.min(...targetPts.map(t => Math.abs(t.x - x) + Math.abs(t.y - y)))
+  const h = (x: number, y: number) => {
+    let best = Infinity
+    for (const t of targetPts) best = Math.min(best, Math.abs(t.x - x) + Math.abs(t.y - y))
+    return best
+  }
 
   for (const p of srcPorts) {
     const node = indexOf(ys, p.stub.y) * W + indexOf(xs, p.stub.x)
@@ -242,11 +252,26 @@ function simplify(pts: Point[]): Point[] {
   return out
 }
 
+// Routes per shapes array. The store replaces the array whenever any shape changes, so a cached
+// route stays valid until then — rendering, hit testing and exports all reuse it. Callers must
+// not mutate a shapes array in place.
+const routeCache = new WeakMap<Shape[], Map<string, Point[] | null>>()
+
 /**
  * Polyline (≥ 2 points) from the source shape boundary to the target shape boundary,
- * or null if either endpoint shape is missing.
+ * or null if either endpoint shape is missing. Don't mutate the returned points (they're cached).
  */
 export function routeLine(line: Line, shapes: Shape[]): Point[] | null {
+  let routes = routeCache.get(shapes)
+  if (!routes) routeCache.set(shapes, routes = new Map())
+  const key = `${line.fromId}
+${line.toId}`
+  let route = routes.get(key)
+  if (route === undefined) routes.set(key, route = computeRoute(line, shapes))
+  return route
+}
+
+function computeRoute(line: Line, shapes: Shape[]): Point[] | null {
   const from = shapes.find(s => s.id === line.fromId)
   const to = shapes.find(s => s.id === line.toId)
   if (!from || !to) return null

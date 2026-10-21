@@ -6,9 +6,13 @@ let elkInstance: any = null
 
 async function getElk() {
   if (!elkInstance) {
-    const mod = await import('elkjs/lib/elk.bundled.js')
-    const ELK = mod.default || mod
-    elkInstance = new ELK()
+    // elk-api runs ELK in a real Web Worker, keeping big layouts off the UI thread;
+    // elk.bundled only fakes a worker and computes on the main thread
+    const [{ default: ELK }, { default: workerUrl }] = await Promise.all([
+      import('elkjs/lib/elk-api.js'),
+      import('elkjs/lib/elk-worker.min.js?url'),
+    ])
+    elkInstance = new ELK({ workerUrl })
   }
   return elkInstance
 }

@@ -62,7 +62,7 @@ When `layoutLocked` is true, `triggerLayout()` is a no-op. `forceLayout()` bypas
 Children are passed to ELK in breadth-first flow order from root shapes (no incoming lines), with `MODEL_ORDER` cycle breaking, so loops become back-edges rather than reordering the flow.
 
 ### Connector Routing
-`routeLine()` in `routing.ts` is the single source of line geometry for canvas rendering, hit testing and all three exporters. A line is straight (edge-to-edge) when that segment clears every other shape; otherwise it is routed orthogonally with A* over a sparse grid built from padded shape bounds, with a bend penalty. Routes are computed from live geometry on every render rather than stored, so they stay valid after manual moves.
+`routeLine()` in `routing.ts` is the single source of line geometry for canvas rendering, hit testing and all three exporters. A line is straight (edge-to-edge) when that segment clears every other shape; otherwise it is routed orthogonally with A* over a sparse grid built from padded shape bounds, with a bend penalty. Routes are computed from live geometry on every render rather than stored, so they stay valid after manual moves. Routes are cached per `shapes` array (a `WeakMap`), so pans, zooms, hit tests and exports reuse them until a shape changes; this relies on the store never mutating a shapes array in place. Obstacles are rasterised once per route onto a doubled grid (grid lines and the midpoints between them), so node and edge checks are array lookups.
 
 ### Free Lines
 `FreeLine` (`model.ts`) is a standalone segment `{ x1, y1, x2, y2, color }`, kept in its own `freeLines` array alongside `shapes` and `lines` (connectors). It is part of history snapshots, auto-save, save/load (older files without `freeLines` load as `[]`) and all three exporters (Excalidraw exports it as an unbound `line` element). Free lines are not routing obstacles. They share `updateLineColor()` and the line colour default with connectors, since ids are unique across both arrays.
@@ -96,10 +96,11 @@ npx vite build        # Production build
 npm run dev           # Dev server with HMR
 ```
 
-The ELK.js chunk is ~1.4MB (450KB gzipped). It's loaded lazily on first layout trigger.
+ELK runs in a Web Worker: `layout.ts` loads `elkjs/lib/elk-api.js` with the worker script's URL (`elk-worker.min.js?url`, ~1.6MB, precached by the service worker), so large layouts don't block the UI. Both are loaded lazily on the first layout.
 
 ## Conventions
 - Shapes can change type (`changeShapeType()`, from the property panel). The shape keeps its id, so connectors stay attached; it is re-fitted with `autoResizeShape()` around its centre (some types need extra text padding) and layout re-runs. Colours are kept rather than switching to the new type's defaults
+- Auto-save waits for the IndexedDB transaction to complete; a failure (e.g. quota) sets `saveError`, which the toolbar shows as "Not saved" until a later save succeeds. On startup `App` renders nothing until the auto-save has been restored, so edits can't be overwritten by a late restore, and the restore is not an undoable step
 - Loaded files and the auto-save go through `parseDiagram()` (`core/validate.ts`) before touching state. It checks every field's type, finite numbers, colours (hex, keyword, `rgb()`/`hsl()`, `transparent`, `auto` only, so nothing can break out of an SVG attribute), unique ids across all arrays and connector endpoints, and rejects the whole file on the first problem; `loadDiagram()` returns that message. New fields must be added there. The SVG exporter also escapes every colour attribute
 - Old shape types (`square`, `circle`, `oval`) are migrated to `rectangle`/`ellipse` on file load
 - Shape IDs use format `el_{counter}_{timestamp_base36}`

@@ -104,6 +104,8 @@ interface DiagramState {
   connecting: ConnectingState | null
   selection: SelectionKind
   layoutRunning: boolean
+  // Why the last auto-save failed, or null once one succeeds
+  saveError: string | null
   layoutLocked: boolean
   snapToGrid: boolean
   angleLock: boolean
@@ -238,14 +240,19 @@ function openDb(): Promise<IDBDatabase> {
 }
 
 async function autoSave() {
-  const { shapes, lines, freeLines, texts } = useDiagramStore.getState()
+  const { shapes, lines, freeLines, texts, saveError } = useDiagramStore.getState()
   try {
     const db = await openDb()
-    const tx = db.transaction(DB_STORE, 'readwrite')
-    tx.objectStore(DB_STORE).put({ version: DIAGRAM_VERSION, shapes, lines, freeLines, texts }, AUTO_SAVE_KEY)
-    db.close()
-  } catch {
-    // Silently fail auto-save
+    // A full disk or quota error aborts the transaction after put() returns, so wait for it to settle
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readwrite')
+      tx.oncomplete = () => resolve()
+      tx.onerror = tx.onabort = () => reject(tx.error ?? new Error('save was aborted'))
+      tx.objectStore(DB_STORE).put({ version: DIAGRAM_VERSION, shapes, lines, freeLines, texts }, AUTO_SAVE_KEY)
+    }).finally(() => db.close())
+    if (saveError) useDiagramStore.setState({ saveError: null })
+  } catch (e) {
+    useDiagramStore.setState({ saveError: e instanceof Error ? e.message : String(e) })
   }
 }
 
@@ -359,6 +366,7 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
   connecting: null,
   selection: null,
   layoutRunning: false,
+  saveError: null,
   layoutLocked: localStorage.getItem('idrawm-layout-locked') === 'true',
   snapToGrid: localStorage.getItem('idrawm-snap-grid') === 'true',
   angleLock: localStorage.getItem('idrawm-angle-lock') === 'true',

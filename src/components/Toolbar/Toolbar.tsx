@@ -140,6 +140,7 @@ export default function Toolbar() {
   const historyIndex = useDiagramStore(s => s.historyIndex)
   const historyLength = useDiagramStore(s => s.history.length)
   const theme = useDiagramStore(s => s.theme)
+  const saveError = useDiagramStore(s => s.saveError)
   const toggleTheme = useDiagramStore(s => s.toggleTheme)
   const layoutLocked = useDiagramStore(s => s.layoutLocked)
   const toggleLayoutLock = useDiagramStore(s => s.toggleLayoutLock)
@@ -296,6 +297,15 @@ export default function Toolbar() {
 
       <div className="toolbar-group">
         <FileMenu />
+        {saveError && (
+          <span
+            className="save-warning"
+            role="status"
+            title={`Auto-save failed (${saveError}). Changes since then won't be restored after a reload; use File > Save to keep a copy. Auto-save retries on your next change.`}
+          >
+            {'⚠'} Not saved
+          </span>
+        )}
       </div>
 
       <div className="toolbar-divider" />
