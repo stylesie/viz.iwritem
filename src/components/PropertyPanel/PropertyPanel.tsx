@@ -1,6 +1,7 @@
 import { useDiagramStore } from '../../store/diagramStore'
 import type { TextZone, IconAlign } from '../../store/diagramStore'
 import type { ShapeType } from '../../core/model'
+import { AUTO_COLOR } from '../../core/model'
 import { TEXT_SIZES } from '../../core/textBox'
 import { SHAPE_TOOLS } from '../shapeTypes'
 import './PropertyPanel.css'
@@ -89,12 +90,13 @@ function ColorSwatch({ color, selected, onClick }: {
   onClick: () => void
 }) {
   const isTransparent = color === 'transparent'
+  const isAuto = color === AUTO_COLOR
   return (
     <button
-      className={`color-swatch ${selected ? 'selected' : ''} ${isTransparent ? 'transparent' : ''}`}
-      style={isTransparent ? undefined : { backgroundColor: color }}
+      className={`color-swatch ${selected ? 'selected' : ''} ${isTransparent ? 'transparent' : ''} ${isAuto ? 'auto' : ''}`}
+      style={isTransparent || isAuto ? undefined : { backgroundColor: color }}
       onClick={onClick}
-      title={isTransparent ? 'Transparent' : color}
+      title={isTransparent ? 'Transparent' : isAuto ? 'Auto (dark on light theme, light on dark theme)' : color}
     />
   )
 }
@@ -274,7 +276,7 @@ function LineProperties() {
       <div className="prop-section">
         <div className="prop-label">Line Colour</div>
         <div className="color-grid">
-          {PALETTE.slice(0, 16).map(c => (
+          {[AUTO_COLOR, ...PALETTE.slice(0, 16)].map(c => (
             <ColorSwatch
               key={`line-${c}`}
               color={c}
@@ -283,7 +285,7 @@ function LineProperties() {
             />
           ))}
         </div>
-        {line.color !== 'transparent' && (
+        {line.color !== 'transparent' && line.color !== AUTO_COLOR && (
           <input
             type="color"
             className="color-input"
@@ -335,7 +337,7 @@ function TextProperties() {
       <div className="prop-section">
         <div className="prop-label">Colour</div>
         <div className="color-grid">
-          {PALETTE.slice(1, 16).map(c => (
+          {[AUTO_COLOR, ...PALETTE.slice(1, 16)].map(c => (
             <ColorSwatch
               key={`textbox-${c}`}
               color={c}
@@ -344,12 +346,14 @@ function TextProperties() {
             />
           ))}
         </div>
-        <input
-          type="color"
-          className="color-input"
-          value={t.color}
-          onChange={e => updateTextStyle(t.id, { color: e.target.value })}
-        />
+        {t.color !== AUTO_COLOR && (
+          <input
+            type="color"
+            className="color-input"
+            value={t.color}
+            onChange={e => updateTextStyle(t.id, { color: e.target.value })}
+          />
+        )}
       </div>
 
       <button

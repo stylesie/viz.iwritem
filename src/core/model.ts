@@ -61,6 +61,20 @@ export interface Diagram {
   texts: TextBox[]
 }
 
+/** Colour that follows the theme: dark ink on the light canvas, light ink on the dark one */
+export const AUTO_COLOR = 'auto'
+export const INK_LIGHT = '#2d3436'
+export const INK_DARK = '#dfe6e9'
+
+/** Concrete colour for drawing; exports use the default light-theme ink (white background) */
+export function resolveColor(color: string, ink = INK_LIGHT): string {
+  return color === AUTO_COLOR ? ink : color
+}
+
+export function withResolvedColors<T extends { color: string }>(items: T[], ink = INK_LIGHT): T[] {
+  return items.map(i => ({ ...i, color: resolveColor(i.color, ink) }))
+}
+
 let nextId = 1
 
 export function generateId(): string {

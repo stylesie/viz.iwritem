@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect } from 'react'
 import { useDiagramStore } from '../../store/diagramStore'
 import type { TextZone } from '../../store/diagramStore'
 import { HEADER_FONT, BODY_FONT, FOOTER_FONT } from '../../core/autoResize'
@@ -29,21 +29,10 @@ function ShapeTextEditor() {
     footer: null,
   })
 
-  const [localText, setLocalText] = useState<Record<TextZone, string>>({
-    header: '',
-    body: '',
-    footer: '',
-  })
-
   const shape = editing ? shapes.find(s => s.id === editing.shapeId) : null
 
   useEffect(() => {
     if (shape && editing) {
-      setLocalText({
-        header: shape.header,
-        body: shape.body,
-        footer: shape.footer,
-      })
       requestAnimationFrame(() => {
         const input = inputRefs.current[editing.zone]
         if (input) {
@@ -63,7 +52,6 @@ function ShapeTextEditor() {
   const panelTop = screenY
 
   const handleChange = (zone: TextZone, value: string) => {
-    setLocalText(prev => ({ ...prev, [zone]: value }))
     updateShapeText(shape.id, zone, value)
   }
 
@@ -99,7 +87,7 @@ function ShapeTextEditor() {
               ref={el => { inputRefs.current[zone] = el }}
               className="text-editor-input"
               style={{ font: config.font }}
-              value={localText[zone]}
+              value={shape[zone]}
               placeholder={config.placeholder}
               onChange={e => handleChange(zone, e.target.value)}
               rows={zone === 'body' ? 3 : 1}
@@ -124,7 +112,6 @@ function LineTextEditor() {
 
   const panelRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-  const [localLabel, setLocalLabel] = useState('')
 
   const line = editingLine ? lines.find(l => l.id === editingLine.lineId) : null
   const fromShape = line ? shapes.find(s => s.id === line.fromId) : null
@@ -132,7 +119,6 @@ function LineTextEditor() {
 
   useEffect(() => {
     if (line) {
-      setLocalLabel(line.label)
       requestAnimationFrame(() => {
         inputRef.current?.focus()
         inputRef.current?.select()
@@ -149,7 +135,6 @@ function LineTextEditor() {
   const screenMidY = midY * zoom + panY
 
   const handleChange = (value: string) => {
-    setLocalLabel(value)
     updateLineLabel(line.id, value)
   }
 
@@ -181,7 +166,7 @@ function LineTextEditor() {
         <input
           ref={inputRef}
           className="text-editor-input"
-          value={localLabel}
+          value={line.label}
           placeholder="Line label..."
           onChange={e => handleChange(e.target.value)}
         />

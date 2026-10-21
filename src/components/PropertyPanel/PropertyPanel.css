@@ -80,6 +80,11 @@
   background-color: #333;
 }
 
+/* Auto: half light-theme ink, half dark-theme ink */
+.color-swatch.auto {
+  background: linear-gradient(135deg, #2d3436 50%, #dfe6e9 50%);
+}
+
 .set-default-btn {
   font-size: 10px;
   padding: 2px 6px;

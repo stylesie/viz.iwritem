@@ -83,6 +83,8 @@ Snapping works on shape **centres** (`snapShapePosition()` in `model.ts`) becaus
 ### Transparent Colors
 `'transparent'` is a valid fill/stroke/text color value. The color picker (`<input type="color">`) is hidden when the current value is transparent since it doesn't support it. Rough.js handles `fill: 'transparent'` correctly with `fillStyle: 'solid'`.
 
+`AUTO_COLOR` (`'auto'`, `model.ts`) is a line / free line / text box colour that follows the theme. The canvas resolves it with `resolveColor(color, tc.ink)` (`INK_LIGHT` / `INK_DARK`); exporters resolve it to `INK_LIGHT` up front with `withResolvedColors()`, since their background is white. It is the default line and text colour. Saved diagrams and palettes from before it existed used `INK_LIGHT` (`#2d3436`) as the fixed default, so `migrateInk()` turns that value into `'auto'` on load.
+
 ## Build & Check
 
 ```bash

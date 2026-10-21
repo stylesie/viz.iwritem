@@ -1,4 +1,5 @@
 import type { Shape, Line, FreeLine, TextBox } from '../core/model'
+import { withResolvedColors } from '../core/model'
 import { layoutTextBox, TEXT_LINE_HEIGHT } from '../core/textBox'
 import { routeLine, polylineMidpoint } from '../core/routing'
 
@@ -130,6 +131,10 @@ function buildFullText(shape: Shape): string {
 }
 
 export function exportToExcalidraw(shapes: Shape[], lines: Line[], freeLines: FreeLine[] = [], texts: TextBox[] = []): string {
+  // Excalidraw adapts its own dark mode, so 'auto' becomes the light-theme ink
+  lines = withResolvedColors(lines)
+  freeLines = withResolvedColors(freeLines)
+  texts = withResolvedColors(texts)
   seed = 1
   const elements: (ExBase | ExText | ExArrow)[] = []
 

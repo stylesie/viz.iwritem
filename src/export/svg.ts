@@ -1,4 +1,5 @@
 import type { Shape, Line, FreeLine, TextBox } from '../core/model'
+import { withResolvedColors } from '../core/model'
 import { layoutTextBox } from '../core/textBox'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../core/autoResize'
 import { getPolygonVertices } from '../utils/geometry'
@@ -183,6 +184,9 @@ function textBoxToSvg(t: TextBox, ox: number, oy: number): string {
 }
 
 export function exportToSvg(shapes: Shape[], lines: Line[], freeLines: FreeLine[] = [], texts: TextBox[] = []): string {
+  lines = withResolvedColors(lines)
+  freeLines = withResolvedColors(freeLines)
+  texts = withResolvedColors(texts)
   if (shapes.length === 0 && freeLines.length === 0 && texts.length === 0) return ''
 
   const bounds = getBounds(shapes, freeLines, texts)

@@ -1,4 +1,5 @@
 import type { Shape, Line, FreeLine, TextBox } from '../core/model'
+import { withResolvedColors } from '../core/model'
 import { layoutTextBox, textBoxFont } from '../core/textBox'
 import rough from 'roughjs'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../core/autoResize'
@@ -236,6 +237,9 @@ function drawLineToCtx(ctx: CanvasRenderingContext2D, line: Line, shapes: Shape[
 }
 
 export function exportToPng(shapes: Shape[], lines: Line[], freeLines: FreeLine[] = [], texts: TextBox[] = []): Promise<Blob> {
+  lines = withResolvedColors(lines)
+  freeLines = withResolvedColors(freeLines)
+  texts = withResolvedColors(texts)
   return new Promise((resolve, reject) => {
     if (shapes.length === 0 && freeLines.length === 0 && texts.length === 0) {
       reject(new Error('Nothing to export'))

@@ -55,6 +55,7 @@ Select a shape or line to open the property panel on the right:
 - **Fill / Border / Text colors** -- Pick from the palette or use the color picker. The first swatch is transparent (checkerboard pattern).
 - **Icons** -- Assign emoji icons to any text zone (header, body, footer) with left/center/right alignment.
 - **Line color** -- Same palette, applied to the selected connection or line.
+- **Auto colour** -- The half-dark, half-light swatch (first for lines and text) follows the theme: dark on the light canvas, light on the dark one. It's the default for connections, lines and text. Exports use the dark version, since they have a white background.
 
 ### Default Colors
 Each "Set as Default" button saves the current color as the default for that shape type. New shapes of that type will use your chosen colors. Line defaults work the same way. Defaults persist across sessions.

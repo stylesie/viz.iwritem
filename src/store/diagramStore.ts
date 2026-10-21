@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import type { Shape, ShapeType, Line, FreeLine, TextBox, IconAlign } from '../core/model'
-import { createShape, generateId, snapToGrid, snapShapePosition } from '../core/model'
+import { createShape, generateId, snapToGrid, snapShapePosition, AUTO_COLOR, INK_LIGHT } from '../core/model'
 import { autoResizeShape } from '../core/autoResize'
 import { runLayout } from '../core/layout'
 
@@ -20,16 +20,24 @@ export interface DefaultPalette {
   text?: TextDefaults
 }
 
-const DEFAULT_TEXT: TextDefaults = { color: '#2d3436', scale: 2, bold: true }
+const DEFAULT_TEXT: TextDefaults = { color: AUTO_COLOR, scale: 2, bold: true }
+
+// Before AUTO_COLOR existed, lines and text defaulted to the light-theme ink; treat it as auto
+function migrateInk<T extends { color: string }>(item: T): T {
+  return item.color === INK_LIGHT ? { ...item, color: AUTO_COLOR } : item
+}
 
 const DEFAULTS_KEY = 'idrawm-defaults'
 
 function loadDefaultPalette(): DefaultPalette {
   try {
     const raw = localStorage.getItem(DEFAULTS_KEY)
-    if (raw) return JSON.parse(raw) as DefaultPalette
+    if (raw) {
+      const palette = JSON.parse(raw) as DefaultPalette
+      return { ...palette, line: migrateInk(palette.line), text: palette.text && migrateInk(palette.text) }
+    }
   } catch { /* ignore */ }
-  return { shapes: {}, line: { color: '#2d3436' } }
+  return { shapes: {}, line: { color: AUTO_COLOR } }
 }
 
 function saveDefaultPalette(palette: DefaultPalette) {
@@ -925,9 +933,9 @@ export const useDiagramStore = create<DiagramState>((set, get) => ({
         pushHistory(get, set)
         set({
           shapes: migratedShapes,
-          lines: data.lines || [],
-          freeLines: Array.isArray(data.freeLines) ? data.freeLines : [],
-          texts: Array.isArray(data.texts) ? data.texts : [],
+          lines: (data.lines || []).map(migrateInk),
+          freeLines: (Array.isArray(data.freeLines) ? data.freeLines : []).map(migrateInk),
+          texts: (Array.isArray(data.texts) ? data.texts : []).map(migrateInk),
           selection: null,
           editing: null,
           editingLine: null,

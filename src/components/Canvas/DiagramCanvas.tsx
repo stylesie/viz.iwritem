@@ -7,7 +7,7 @@ import { hitTestShape, getShapeEdgePoint, pointToSegmentDist, getPolygonVertices
 import { routeLine, polylineMidpoint } from '../../core/routing'
 import { computeTextLayout, PADDING_X, ICON_SIZE, ICON_GAP } from '../../core/autoResize'
 import type { Shape, Line, FreeLine, TextBox } from '../../core/model'
-import { GRID_SIZE, snapShapePosition, snapToGrid as snapValue } from '../../core/model'
+import { GRID_SIZE, snapShapePosition, snapToGrid as snapValue, resolveColor, INK_LIGHT, INK_DARK } from '../../core/model'
 import { lockToAngles } from '../../core/angleLock'
 import { layoutTextBox, textBoxFont } from '../../core/textBox'
 import type { Point } from '../../utils/geometry'
@@ -20,6 +20,8 @@ interface ThemeColors {
   selection: string
   placeholderText: string
   canvasBg: string
+  // What AUTO_COLOR lines and text draw in
+  ink: string
 }
 
 const LIGHT_COLORS: ThemeColors = {
@@ -27,6 +29,7 @@ const LIGHT_COLORS: ThemeColors = {
   selection: '#0984e3',
   placeholderText: '#bbb',
   canvasBg: '#fafafa',
+  ink: INK_LIGHT,
 }
 
 const DARK_COLORS: ThemeColors = {
@@ -34,6 +37,7 @@ const DARK_COLORS: ThemeColors = {
   selection: '#a8a5ff',
   placeholderText: '#666',
   canvasBg: '#121212',
+  ink: INK_DARK,
 }
 
 function getThemeColors(theme: Theme): ThemeColors {
@@ -251,9 +255,10 @@ function drawLine(
   if (!pts) return
   const prevPt = pts[pts.length - 2]
   const toPt = pts[pts.length - 1]
+  const color = selected ? tc.selection : resolveColor(line.color, tc.ink)
 
   ctx.save()
-  ctx.strokeStyle = selected ? tc.selection : line.color
+  ctx.strokeStyle = color
   ctx.lineWidth = selected ? 2.5 : 1.5
   ctx.lineJoin = 'round'
 
@@ -265,7 +270,7 @@ function drawLine(
 
   // Draw arrowhead if directed
   if (line.directed) {
-    drawArrowhead(ctx, prevPt.x, prevPt.y, toPt.x, toPt.y, selected ? tc.selection : line.color)
+    drawArrowhead(ctx, prevPt.x, prevPt.y, toPt.x, toPt.y, color)
   }
 
   // Draw label
@@ -286,7 +291,7 @@ function drawLine(
       16 + pad,
     )
 
-    ctx.fillStyle = selected ? tc.selection : line.color
+    ctx.fillStyle = color
     ctx.fillText(line.label, midX, midY - 2)
   }
 
@@ -355,7 +360,7 @@ function drawFreeLine(
   zoom: number,
 ) {
   ctx.save()
-  ctx.strokeStyle = selected ? tc.selection : f.color
+  ctx.strokeStyle = selected ? tc.selection : resolveColor(f.color, tc.ink)
   ctx.lineWidth = selected ? 2.5 : 2
   ctx.lineCap = 'round'
   ctx.beginPath()
@@ -398,7 +403,7 @@ function drawTextBox(ctx: CanvasRenderingContext2D, t: TextBox, selected: boolea
   ctx.font = textBoxFont(t)
   ctx.textBaseline = 'middle'
   // Only the box being edited can be empty; it shows the placeholder
-  ctx.fillStyle = t.text ? t.color : tc.placeholderText
+  ctx.fillStyle = t.text ? resolveColor(t.color, tc.ink) : tc.placeholderText
   layout.lines.forEach((line, i) => ctx.fillText(line, t.x, t.y + (i + 0.5) * layout.lineHeight))
 
   if (selected) {
