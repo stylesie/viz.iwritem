@@ -244,6 +244,9 @@ function drawTextZones(ctx: CanvasRenderingContext2D, shape: Shape) {
 
 // ── Line drawing ──────────────────────────────────────────────
 
+// Shape count from which connectors not attached to a dragged shape are frozen during the drag
+const FREEZE_ROUTES_MIN_SHAPES = 40
+
 function drawLine(
   ctx: CanvasRenderingContext2D,
   line: Line,
@@ -533,6 +536,10 @@ export default function DiagramCanvas() {
   // Swallows the click that follows drawing or dragging a free line
   const suppressClickRef = useRef(false)
   const didDragRef = useRef(false)
+  // Large diagrams only: while a shape is dragged, connectors not attached to it keep their routes
+  // from the drag start (cached, so free each frame) and only its own connectors re-route live.
+  // Everything re-routes once on drop.
+  const [routeFreeze, setRouteFreeze] = useState<{ shapes: Shape[]; movingId: string } | null>(null)
 
   // ── Render ──
 
@@ -561,7 +568,8 @@ export default function DiagramCanvas() {
     // Draw lines first (behind shapes)
     for (const line of lines) {
       const isSelected = selection?.type === 'line' && selection.id === line.id
-      drawLine(ctx, line, shapes, isSelected, tc)
+      const frozen = routeFreeze && line.fromId !== routeFreeze.movingId && line.toId !== routeFreeze.movingId
+      drawLine(ctx, line, frozen ? routeFreeze.shapes : shapes, isSelected, tc)
     }
 
     // Free lines sit with connectors, behind shapes
@@ -593,7 +601,7 @@ export default function DiagramCanvas() {
     }
 
     ctx.restore()
-  }, [shapes, lines, freeLines, texts, draft, panX, panY, zoom, selection, connecting, theme])
+  }, [shapes, lines, freeLines, texts, draft, panX, panY, zoom, selection, connecting, theme, routeFreeze])
 
   useEffect(() => {
     const frameId = requestAnimationFrame(render)
@@ -812,6 +820,10 @@ export default function DiagramCanvas() {
               : [{ x: hit.x + hit.width / 2, y: hit.y + hit.height / 2 }]
             isPanningRef.current = false
             pushMoveHistory()
+            if (shapes.length >= FREEZE_ROUTES_MIN_SHAPES) {
+              // Snapshot after selectShape, which replaces the shapes array
+              setRouteFreeze({ shapes: useDiagramStore.getState().shapes, movingId: hit.id })
+            }
           } else {
             dragTargetRef.current = null
             isPanningRef.current = true
@@ -894,6 +906,7 @@ export default function DiagramCanvas() {
       onDragEnd: ({ xy: [sx, sy] }) => {
         // Reset drag flag so subsequent clicks aren't blocked
         didDragRef.current = false
+        setRouteFreeze(null)
 
         if (drawStartRef.current) {
           drawStartRef.current = null

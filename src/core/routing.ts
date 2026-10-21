@@ -256,14 +256,35 @@ function simplify(pts: Point[]): Point[] {
 // route stays valid until then — rendering, hit testing and exports all reuse it. Callers must
 // not mutate a shapes array in place.
 const routeCache = new WeakMap<Shape[], Map<string, Point[] | null>>()
+let lastShapes: Shape[] | null = null
+
+/** Same shapes in the same places: routes don't depend on selection, colours or text */
+function sameGeometry(a: Shape[], b: Shape[]): boolean {
+  return a.length === b.length && a.every((s, i) => {
+    const t = b[i]
+    return s.id === t.id && s.type === t.type && s.x === t.x && s.y === t.y && s.width === t.width && s.height === t.height
+  })
+}
+
+function routesFor(shapes: Shape[]): Map<string, Point[] | null> {
+  let routes = routeCache.get(shapes)
+  if (!routes) {
+    // Selecting or recolouring a shape replaces the array without moving anything, so keep the
+    // previous array's routes rather than re-routing every line
+    const prev = lastShapes && routeCache.get(lastShapes)
+    routes = prev && sameGeometry(lastShapes!, shapes) ? prev : new Map()
+    routeCache.set(shapes, routes)
+  }
+  lastShapes = shapes
+  return routes
+}
 
 /**
  * Polyline (≥ 2 points) from the source shape boundary to the target shape boundary,
  * or null if either endpoint shape is missing. Don't mutate the returned points (they're cached).
  */
 export function routeLine(line: Line, shapes: Shape[]): Point[] | null {
-  let routes = routeCache.get(shapes)
-  if (!routes) routeCache.set(shapes, routes = new Map())
+  const routes = routesFor(shapes)
   const key = `${line.fromId}
 ${line.toId}`
   let route = routes.get(key)
