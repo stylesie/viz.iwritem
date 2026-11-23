@@ -152,3 +152,9 @@
     font-size: 22px;
   }
 }
+
+/* The credit link is an <a> styled as a tool button. */
+a.tool-btn {
+  color: inherit;
+  text-decoration: none;
+}

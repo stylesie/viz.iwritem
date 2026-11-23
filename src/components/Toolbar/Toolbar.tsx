@@ -344,6 +344,10 @@ export default function Toolbar() {
           <span className="tool-icon">{theme === 'light' ? '\u263E' : '\u2600'}</span>
           <span className="tool-label">{theme === 'light' ? 'Dark' : 'Light'}</span>
         </button>
+        <a className="tool-btn" href="https://colinstyles.com/" target="_blank" rel="noopener" title="Made by Colin Styles">
+          <span className="tool-icon">{'\u2139'}</span>
+          <span className="tool-label">Colin Styles</span>
+        </a>
       </div>
     </div>
   )
